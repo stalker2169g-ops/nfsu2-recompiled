@@ -3,18 +3,34 @@ name: Android Russian APK
 on:
   workflow_dispatch:
   push:
+    branches: [main]
     paths:
       - '.github/workflows/android-russian-apk.yml'
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 180
 
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install generation tools
+        run: python3 -m pip install capstone==5.0.6 pefile==2024.8.26 cryptography
+
+      - name: Receive encrypted owner input
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/receive_build_input.py
 
       - uses: actions/setup-java@v4
         with:
@@ -46,11 +62,16 @@ jobs:
           python3 ports/dxvk_android/prepare.py build/dxvk-upstream build/dxvk-source
           python3 ports/dxvk_android/shaders.py build/dxvk-source
 
+      - name: Generate game C
+        env:
+          PYTHONUNBUFFERED: '1'
+        run: python3 scripts/generate_android_guest.py
+
       - name: Build APK
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleDebug -PnfsAbi=arm64-v8a --no-daemon --stacktrace
+          ./gradlew :app:assembleDebug -PnfsAbi=arm64-v8a --no-daemon --stacktrace --max-workers=2
 
       - uses: actions/upload-artifact@v4
         with:
@@ -58,3 +79,8 @@ jobs:
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
+      - name: Remove ephemeral input branch
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/build-input-$GITHUB_RUN_ID"
