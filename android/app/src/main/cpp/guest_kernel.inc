@@ -132,11 +132,11 @@ void processorFeature() {
 }
 void setExceptionFilter() {uint32_t old=exceptionFilter;exceptionFilter=arg(0);ret(old,1);}
 void encodePointer() {ret(arg(0)^0x51c39a71u,1);}
-void getACP() {ret(1252,0);}
+void getACP() {ret(guestLanguage=="Russian"?1251:1252,0);}
 void getOEMCP() {ret(437,0);}
-void threadLocale() {ret(0x409,0);}
+void threadLocale() {ret(guestLanguage=="Russian"?0x419:0x409,0);}
 void cpInfo() {
-    uint32_t cp=arg(0);if(cp!=0&&cp!=1252&&cp!=437&&cp!=65001){lastError=87;ret(0,2);return;}
+    uint32_t cp=arg(0);if(cp!=0&&cp!=1251&&cp!=1252&&cp!=437&&cp!=65001){lastError=87;ret(0,2);return;}
     uint32_t out=arg(1);std::memset(ptr(out,20),0,20);write32(out,cp==65001?4:1);*static_cast<char*>(ptr(out+4,1))='?';ret(1,2);
 }
 uint64_t counter() {return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());}
