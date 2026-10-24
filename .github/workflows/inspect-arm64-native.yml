@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --break-system-packages pyelftools capstone
       - name: Inspect pinned upstream library
         run: |
           curl -fL --retry 3 https://github.com/codepdbh/nfsu2-recompiled/releases/download/v0.14.10/NFSU2-AndroidEvolved-v0.14.10-arm64.apk -o upstream.apk
@@ -19,3 +21,4 @@ jobs:
           readelf -SW native.so
           readelf -Ws native.so | c++filt | grep -E 'decodeByte|effectiveCP|multiToWide|wideToMulti|setGuestLanguage|getACP|cpInfo|guestLanguage|connectGuestRuntime|ret\(' || true
           nm -aC native.so | head -n 10 || true
+          python3 scripts/inspect_native_codec.py
