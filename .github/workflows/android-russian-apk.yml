@@ -31,64 +31,26 @@ jobs:
         run: |
           sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358' 'cmake;3.30.5'
 
-      - name: Patch Russian codepage
-        shell: bash
+      - name: Check Russian codepage
+        run: python3 scripts/check_cp1251.py
+
+      - name: Prepare native build dependencies
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          c = Path('android/app/src/main/cpp/guest_charset.inc')
-          s = c.read_text()
-
-          table = []
-          for i in range(128, 192):
-              try:
-                  table.append(ord(bytes([i]).decode('cp1251')))
-              except UnicodeDecodeError:
-                  table.append(0xfffd)
-
-          s = (
-              'constexpr uint16_t cp1251High[64]={' +
-              ','.join(hex(x) for x in table) +
-              '};\n' + s
-          )
-
-          old = 'uint32_t effectiveCP(uint32_t cp){return cp==0||cp==3?1252:cp==1?437:cp;}'
-          assert old in s
-          s = s.replace(old, 'uint32_t effectiveCP(uint32_t cp){return cp==0||cp==3?1251:cp==1?437:cp;}')
-
-          old = 'uint32_t decodeByte(uint32_t cp,uint8_t byte){'
-          assert old in s
-          s = s.replace(
-              old,
-              old + 'if(cp==1251&&byte>=128)return byte>=192?0x0410u+byte-192:cp1251High[byte-128];'
-          )
-
-          s = s.replace(
-              'cp!=1252&&cp!=437&&cp!=65001',
-              'cp!=1251&&cp!=1252&&cp!=437&&cp!=65001'
-          )
-          c.write_text(s)
-
-          k = Path('android/app/src/main/cpp/guest_kernel.inc')
-          s = k.read_text()
-          old = 'void getACP() {ret(1252,0);}'
-          assert old in s
-          s = s.replace(old, 'void getACP() {ret(1251,0);}')
-          s = s.replace(
-              'cp!=0&&cp!=1252&&cp!=437&&cp!=65001',
-              'cp!=0&&cp!=1251&&cp!=1252&&cp!=437&&cp!=65001'
-          )
-          k.write_text(s)
-
-          print('Russian CP1251 patch applied')
-          PY
+          sudo apt-get update
+          sudo apt-get install -y glslang-tools spirv-tools
+          git clone https://github.com/sp00nznet/pcrecomp.git ../pcrecomp
+          git -C ../pcrecomp checkout 35548b8
+          git -C ../pcrecomp -c user.name="Build" -c user.email="build@localhost" am "$GITHUB_WORKSPACE"/patches/pcrecomp/*.patch
+          git clone https://github.com/Joshua-Ashton/dxvk-native.git build/dxvk-upstream
+          git -C build/dxvk-upstream checkout c8dc91fabd00cac11d697ccf07426e798393cd40
+          python3 ports/dxvk_android/prepare.py build/dxvk-upstream build/dxvk-source
+          python3 ports/dxvk_android/shaders.py build/dxvk-source
 
       - name: Build APK
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleDebug --no-daemon --stacktrace
+          ./gradlew :app:assembleDebug -PnfsAbi=arm64-v8a --no-daemon --stacktrace
 
       - uses: actions/upload-artifact@v4
         with:
