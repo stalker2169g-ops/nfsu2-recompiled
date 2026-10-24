@@ -2,6 +2,9 @@
 name: Android Russian APK
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/android-russian-apk.yml'
 
 jobs:
   build:
@@ -19,6 +22,8 @@ jobs:
           java-version: '17'
 
       
+
+      - uses: android-actions/setup-android@v3
 
       - name: Install Android tools
         run: |
