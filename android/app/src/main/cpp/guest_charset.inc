@@ -1,13 +1,16 @@
+// Windows-1251 for Russian game data; byte 0x98 is undefined.
+constexpr uint16_t cp1251High[64]={0x402,0x403,0x201a,0x453,0x201e,0x2026,0x2020,0x2021,0x20ac,0x2030,0x409,0x2039,0x40a,0x40c,0x40b,0x40f,0x452,0x2018,0x2019,0x201c,0x201d,0x2022,0x2013,0x2014,0xfffd,0x2122,0x459,0x203a,0x45a,0x45c,0x45b,0x45f,0xa0,0x40e,0x45e,0x408,0xa4,0x490,0xa6,0xa7,0x401,0xa9,0x404,0xab,0xac,0xad,0xae,0x407,0xb0,0xb1,0x406,0x456,0x491,0xb5,0xb6,0xb7,0x451,0x2116,0x454,0xbb,0x458,0x405,0x455,0x457};
+uint32_t guestACP(){return guestLanguage=="Russian"?1251:1252;}
 constexpr uint16_t cp1252High[32]={0x20ac,0x81,0x201a,0x192,0x201e,0x2026,0x2020,0x2021,0x2c6,0x2030,0x160,0x2039,0x152,0x8d,0x17d,0x8f,0x90,0x2018,0x2019,0x201c,0x201d,0x2022,0x2013,0x2014,0x2dc,0x2122,0x161,0x203a,0x153,0x9d,0x17e,0x178};
 constexpr char16_t cp437High[]=u"ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ";
 static_assert(sizeof(cp437High)/sizeof(char16_t)==129,"CP437 table size");
-uint32_t effectiveCP(uint32_t cp){return cp==0||cp==3?1252:cp==1?437:cp;}
-uint32_t decodeByte(uint32_t cp,uint8_t byte){if(cp==1252&&byte>=128&&byte<160)return cp1252High[byte-128];if(cp==437&&byte>=128)return cp437High[byte-128];return byte;}
+uint32_t effectiveCP(uint32_t cp){return cp==0||cp==3?guestACP():cp==1?437:cp;}
+uint32_t decodeByte(uint32_t cp,uint8_t byte){if(cp==1251&&byte>=128)return byte>=192?0x0410u+byte-192:cp1251High[byte-128];if(cp==1252&&byte>=128&&byte<160)return cp1252High[byte-128];if(cp==437&&byte>=128)return cp437High[byte-128];return byte;}
 int encodeByte(uint32_t cp,uint32_t code){for(unsigned i=0;i<256;++i)if(decodeByte(cp,static_cast<uint8_t>(i))==code)return static_cast<int>(i);return -1;}
 void wideToMulti() {
     uint32_t cp=effectiveCP(arg(0)),flags=arg(1),source=arg(2),out=arg(4),capacity=arg(5);
     int32_t count=static_cast<int32_t>(arg(3));
-    if((cp!=1252&&cp!=437&&cp!=65001)||!source||count==0||count< -1||(capacity&&!out)) {lastError=87;ret(0,8);return;}
+    if((cp!=1251&&cp!=1252&&cp!=437&&cp!=65001)||!source||count==0||count< -1||(capacity&&!out)) {lastError=87;ret(0,8);return;}
     if(cp==65001 && (arg(6)||arg(7))) {lastError=87;ret(0,8);return;}
     std::vector<uint16_t> input;
     if(count==-1){input=wideString(source);input.push_back(0);}else{input.resize(count);std::memcpy(input.data(),ptr(source,uint64_t(count)*2),uint64_t(count)*2);}
@@ -31,7 +34,7 @@ void wideToMulti() {
 void multiToWide() {
     uint32_t cp=effectiveCP(arg(0)),flags=arg(1),source=arg(2),out=arg(4),capacity=arg(5);
     int32_t count=static_cast<int32_t>(arg(3));
-    if((cp!=1252&&cp!=437&&cp!=65001)||!source||count==0||count< -1||(capacity&&!out)){lastError=87;ret(0,6);return;}
+    if((cp!=1251&&cp!=1252&&cp!=437&&cp!=65001)||!source||count==0||count< -1||(capacity&&!out)){lastError=87;ret(0,6);return;}
     std::string input=count==-1?guestString(source)+std::string(1,0):std::string(static_cast<char*>(ptr(source,count)),count);
     std::vector<uint16_t> chars;
     for(size_t i=0;i<input.size();) {
@@ -58,7 +61,7 @@ void multiToWide() {
 void mapStringW() {
     uint32_t locale=arg(0),flags=arg(1),source=arg(2),out=arg(4),capacity=arg(5);
     int32_t count=static_cast<int32_t>(arg(3));
-    if(locale!=0&&locale!=0x409&&locale!=0x400&&locale!=0x800&&locale!=0x7f)
+    if(locale!=0&&locale!=0x409&&locale!=0x419&&locale!=0x400&&locale!=0x800&&locale!=0x7f)
         throw GuestStop("LCMapStringW locale pending: "+hex(locale));
     if(flags!=0x100&&flags!=0x200)throw GuestStop("LCMapStringW flags pending: "+hex(flags));
     if(!source||count==0||count< -1||(capacity&&!out)){lastError=87;ret(0,6);return;}
