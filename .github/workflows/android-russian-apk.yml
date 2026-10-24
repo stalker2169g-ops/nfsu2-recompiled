@@ -1,1 +1,91 @@
 
+name: Android Russian APK
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android tools
+        run: |
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358' 'cmake;3.30.5'
+
+      - name: Patch Russian codepage
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          c = Path('android/app/src/main/cpp/guest_charset.inc')
+          s = c.read_text()
+
+          table = []
+          for i in range(128, 192):
+              try:
+                  table.append(ord(bytes([i]).decode('cp1251')))
+              except UnicodeDecodeError:
+                  table.append(0xfffd)
+
+          s = (
+              'constexpr uint16_t cp1251High[64]={' +
+              ','.join(hex(x) for x in table) +
+              '};\n' + s
+          )
+
+          old = 'uint32_t effectiveCP(uint32_t cp){return cp==0||cp==3?1252:cp==1?437:cp;}'
+          assert old in s
+          s = s.replace(old, 'uint32_t effectiveCP(uint32_t cp){return cp==0||cp==3?1251:cp==1?437:cp;}')
+
+          old = 'uint32_t decodeByte(uint32_t cp,uint8_t byte){'
+          assert old in s
+          s = s.replace(
+              old,
+              old + 'if(cp==1251&&byte>=128)return byte>=192?0x0410u+byte-192:cp1251High[byte-128];'
+          )
+
+          s = s.replace(
+              'cp!=1252&&cp!=437&&cp!=65001',
+              'cp!=1251&&cp!=1252&&cp!=437&&cp!=65001'
+          )
+          c.write_text(s)
+
+          k = Path('android/app/src/main/cpp/guest_kernel.inc')
+          s = k.read_text()
+          old = 'void getACP() {ret(1252,0);}'
+          assert old in s
+          s = s.replace(old, 'void getACP() {ret(1251,0);}')
+          s = s.replace(
+              'cp!=0&&cp!=1252&&cp!=437&&cp!=65001',
+              'cp!=0&&cp!=1251&&cp!=1252&&cp!=437&&cp!=65001'
+          )
+          k.write_text(s)
+
+          print('Russian CP1251 patch applied')
+          PY
+
+      - name: Build APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NFSU2-Russian-ARM64-test
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
