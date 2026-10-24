@@ -41,6 +41,7 @@ public final class LauncherActivity extends Activity {
     private static final int ACCENT = 0xFF8EE03A;
     /** {label, guest language name, LANGUAGES/<file>.bin}. */
     private static final String[][] LANGUAGES = {
+        {"Русский", "Russian", "Russian"},
         {"Español", "Spanish", "Spanish"}, {"English", "English UK", "English"},
         {"Français", "French", "French"}, {"Deutsch", "German", "German"},
         {"Italiano", "Italian", "Italian"}, {"Nederlands", "Dutch", "Dutch"},
