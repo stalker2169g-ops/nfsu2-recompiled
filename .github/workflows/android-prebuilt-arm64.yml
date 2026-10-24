@@ -1,0 +1,77 @@
+name: Android ARM64 prebuilt runtime
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/android-prebuilt-arm64.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Install Android SDK
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Obtain pinned upstream ARM64 runtime
+        run: |
+          mkdir -p build
+          curl -fL --retry 3 https://github.com/codepdbh/nfsu2-recompiled/releases/download/v0.14.10/NFSU2-AndroidEvolved-v0.14.10-arm64.apk -o build/upstream.apk
+          echo '9c6c80b364bbe1399355b22a06fa9f4c16f425229cae00ebee425843cb9cf282  build/upstream.apk' | sha256sum -c -
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, zipfile
+          with zipfile.ZipFile('build/upstream.apk') as archive:
+              members = [m for m in archive.namelist() if m.startswith('lib/arm64-v8a/') and m.endswith('.so')]
+              assert members, 'Upstream APK has no ARM64 runtime'
+              for member in members:
+                  data = archive.read(member)
+                  target = Path('android/app/src/main/jniLibs/arm64-v8a') / Path(member).name
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  target.write_bytes(data)
+                  print(target.name, len(data), hashlib.sha256(data).hexdigest())
+          PY
+          readelf -S android/app/src/main/jniLibs/arm64-v8a/libnfsu2_android.so > build/native-sections.txt
+          readelf -Ws android/app/src/main/jniLibs/arm64-v8a/libnfsu2_android.so | c++filt > build/native-symbols.txt
+          head -n 35 build/native-sections.txt
+          rg 'decodeByte|effectiveCP|multiToWide|wideToMulti|setGuestLanguage|getACP' build/native-symbols.txt || true
+      - name: Check committed codepage implementation
+        run: python3 scripts/check_cp1251.py
+      - name: Build APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug -PnfsAbi=arm64-v8a -PnfsPrebuiltNative --no-daemon --stacktrace --max-workers=2
+      - name: Verify APK native contents
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, zipfile
+          apk = Path('android/app/build/outputs/apk/debug/app-debug.apk')
+          with zipfile.ZipFile(apk) as archive:
+              packaged = [n for n in archive.namelist() if n.startswith('lib/') and n.endswith('.so')]
+              assert packaged and all(n.startswith('lib/arm64-v8a/') for n in packaged), packaged
+              for name in packaged:
+                  assert archive.read(name) == (Path('android/app/src/main/jniLibs') / name.removeprefix('lib/')).read_bytes()
+          print('APK SHA256:', hashlib.sha256(apk.read_bytes()).hexdigest())
+          PY
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose android/app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NFSU2-ARM64-launcher-test-upstream-runtime
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            build/native-sections.txt
+            build/native-symbols.txt
+          if-no-files-found: error
