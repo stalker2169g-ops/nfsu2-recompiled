@@ -1,6 +1,6 @@
 # Russian ARM64 build status — 2026-10-24
 
-No APK has been produced by this work. Russian rendering has not been verified.
+Update: an ARM64 launcher test APK was built successfully in [Actions run 40142832311](https://github.com/stalker2169g-ops/nfsu2-recompiled/actions/runs/40142832311), reusing the official v0.14.10 native libraries. See [APK report](ARM64_TEST_RELEASE.md). The CP1251 source changes are not included in those prebuilt libraries. Russian rendering has not been verified. The sections below document the earlier native-source build attempt.
 
 ## Changes committed
 
