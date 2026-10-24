@@ -1,0 +1,21 @@
+name: Inspect ARM64 native runtime
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/inspect-arm64-native.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Inspect pinned upstream library
+        run: |
+          curl -fL --retry 3 https://github.com/codepdbh/nfsu2-recompiled/releases/download/v0.14.10/NFSU2-AndroidEvolved-v0.14.10-arm64.apk -o upstream.apk
+          echo '9c6c80b364bbe1399355b22a06fa9f4c16f425229cae00ebee425843cb9cf282  upstream.apk' | sha256sum -c -
+          unzip -p upstream.apk lib/arm64-v8a/libnfsu2_android.so > native.so
+          readelf -SW native.so
+          readelf -Ws native.so | c++filt | grep -E 'decodeByte|effectiveCP|multiToWide|wideToMulti|setGuestLanguage|getACP|cpInfo|guestLanguage|connectGuestRuntime|ret\(' || true
+          nm -aC native.so | head -n 10 || true
