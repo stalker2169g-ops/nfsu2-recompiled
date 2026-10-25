@@ -1,4 +1,4 @@
-name: Publish verified ARM64 test APK
+name: Publish verified ARM64 Cyrillic fix
 on:
   workflow_dispatch:
   push:
@@ -7,27 +7,53 @@ on:
 permissions:
   actions: read
   contents: write
+defaults:
+  run:
+    shell: bash
 jobs:
   publish:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Download verified build
+      - name: Wait for the tested build
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh run download 40142832311 --name NFSU2-ARM64-launcher-test-upstream-runtime --dir build/test-apk
+          test "$(gh api repos/$GITHUB_REPOSITORY/actions/runs/40181999283 --jq .head_sha)" = d7932ec2b581fb126224d8e9fb04f65e54a12a65
+          gh run watch 40181999283 --interval 10 --exit-status
+          gh run download 40181999283 --name NFSU2-ARM64-Cyrillic-native-fix --dir build/cyrillic-result
+      - name: Match APK, native hash and ARM64 test evidence
+        run: |
           python3 - <<'PY'
-          import hashlib, shutil
           from pathlib import Path
-          files = list(Path('build/test-apk').rglob('app-debug.apk'))
-          assert len(files) == 1, files
-          assert hashlib.sha256(files[0].read_bytes()).hexdigest() == '94cdbdcb6ce083b2711267019d47e726ad8a49b853dea317754cf5a39e3d3ed9'
-          shutil.copyfile(files[0], 'build/NFSU2-ARM64-launcher-test.apk')
+          import hashlib,json,shutil,zipfile
+          root=Path('build/cyrillic-result')
+          def one(name):
+              matches=list(root.rglob(name))
+              assert len(matches)==1,(name,matches)
+              return matches[0]
+          apk=one('app-debug.apk')
+          report=one('patch-report.json')
+          log=one('verification.log')
+          checksum=one('APK-SHA256.txt').read_text().split()[0]
+          assert hashlib.sha256(apk.read_bytes()).hexdigest()==checksum
+          native_hash=json.loads(report.read_text())['output_sha256']
+          with zipfile.ZipFile(apk) as z:
+              assert hashlib.sha256(z.read('lib/arm64-v8a/libnfsu2_android.so')).hexdigest()==native_hash
+          assert 'ARM64_CODEC_VERIFIED_SHA256='+native_hash in log.read_text()
+          assert 'bias=0x1000000000' in log.read_text()
+          out=Path('build/release');out.mkdir(parents=True,exist_ok=True)
+          name='NFSU2-ARM64-Cyrillic-Fix-test.apk'
+          shutil.copyfile(apk,out/name)
+          shutil.copyfile(report,out/'native-patch-report.json')
+          shutil.copyfile(log,out/'ARM64-codec-verification.log')
+          (out/'SHA256SUMS.txt').write_text(checksum+'  '+name+'\n')
+          print('Published APK SHA256:',checksum)
+          print('Published native SHA256:',native_hash)
           PY
-      - name: Publish test APK
+      - name: Publish corrected test APK
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create arm64-launcher-test-40142832311 build/NFSU2-ARM64-launcher-test.apk --prerelease --target 182221982e2591124b68680d9c59888482a583e6 --title "ARM64 launcher test — upstream native runtime" --notes-file docs/ARM64_TEST_RELEASE.md
+          gh release create arm64-cyrillic-fix-40181999283 build/release/* --prerelease --target d7932ec2b581fb126224d8e9fb04f65e54a12a65 --title "ARM64 Cyrillic fix — verified native CP1251" --notes-file docs/CYRILLIC_ARM64_TEST_REPORT.md
