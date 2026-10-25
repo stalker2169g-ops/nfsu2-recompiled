@@ -1,11 +1,7 @@
 
-name: Android Russian APK
+name: Legacy native source rebuild (owner input required)
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/android-russian-apk.yml'
 
 permissions:
   contents: write
