@@ -159,3 +159,28 @@ void ru_wide_to_multi(void) {
     }
     result(needed,8);
 }
+
+/* Bounded device diagnostics: observe the real font inputs without changing them. */
+extern uint32_t g_ecx;
+extern uint32_t font_trace_state[128];
+extern int font_log(int priority,const char *tag,const char *format,...);
+extern void original_font_quad(void);
+static unsigned font_u16(uint32_t a) {return p(a)[0]|(unsigned)p(a)[1]<<8;}
+void ru_font_quad(void) {
+    uint32_t font=g_ecx,glyph=arg(0);
+    if(font&&glyph) {
+        uint32_t texture=rd(font+8),real=rd(font+12);
+        if(texture) {
+            uint32_t hash=rd(texture+36),slot=0;
+            while(slot<16&&font_trace_state[slot*4]&&font_trace_state[slot*4]!=hash)slot++;
+            if(slot<16&&font_trace_state[slot*4+1]<4) {
+                font_trace_state[slot*4]=hash;
+                unsigned sample=font_trace_state[slot*4+1]++;
+                font_log(4,"NFSU2","FONT_TRACE sample=%u char=%04x font=%08x real=%08x glyph=%08x texture=%08x hash=%08x name=%.*s dims=%ux%u xy=%u,%u size=%ux%u",
+                    sample,font_u16(glyph),font,real,glyph,texture,hash,24,(char*)p(texture+12),
+                    font_u16(texture+68),font_u16(texture+70),font_u16(glyph+4),font_u16(glyph+6),p(glyph)[2],p(glyph)[3]);
+            }
+        }
+    }
+    original_font_quad();
+}

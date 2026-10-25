@@ -58,3 +58,10 @@ r.call(quad)
 assert len(captured)==1
 print('GAME_FONT_QUAD_ARGS',captured[0],flush=True)
 print('GAME_FONT_QUAD_FLOATS',struct.unpack('<12f',struct.pack('<12I',*captured[0])),flush=True)
+
+if len(sys.argv)>2:
+    import json
+    report=json.loads(Path(sys.argv[2]).read_text())
+    state=report['font_trace']['state']
+    assert struct.unpack('<I',r.uc.mem_read(state+4,4))[0]==1
+    print('FONT_TRACE_HOOK_PRESERVED_GAME_QUAD',flush=True)

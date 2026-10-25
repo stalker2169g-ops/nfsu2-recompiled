@@ -18,12 +18,15 @@ data = source.read_bytes()
 assert hashlib.sha256(data).hexdigest() == EXPECTED, "Unrecognized native runtime"
 runner = NativeRunner(data)
 bindings = runner.initialize()
+font_quad_entry = runner.call(runner.symbols['recomp_lookup']['st_value'], 0x51bfc0)
+assert font_quad_entry
+print('Font quad entry:', hex(font_quad_entry), flush=True)
 del runner
 elf = ELFFile(io.BytesIO(data))
 symbols = {s.name: s for s in elf.get_section_by_name(".dynsym").iter_symbols()}
 language_setter = symbols["_Z16setGuestLanguagePKc"]["st_value"]
 assert language_setter == 0x487c20, "Unexpected language setter"
-definitions = {n: symbols[n]["st_value"] for n in ("g_eax", "g_esp", "g_mem_base")}
+definitions = {n: symbols[n]["st_value"] for n in ("g_eax", "g_ecx", "g_esp", "g_mem_base")}
 definitions.update(guest_language=0x97e7de8, runtime_memory=0x97e7d10,
                    original_error_entry=bindings["SetLastError"],
                    original_map_continuation=bindings["LCMapStringW"]+12)
@@ -34,10 +37,19 @@ va = (max(s["p_vaddr"] + s["p_memsz"] for s in elf.iter_segments()
           if s["p_type"] == "PT_LOAD") + 0x3fff) & ~0x3fff
 new_offset = (len(data) + 0x3fff) & ~0x3fff
 output = bytearray(data)
-output.extend(bytes(new_offset + 65536 - len(output)))
+output.extend(bytes(new_offset + 65536 + 16384 - len(output)))
+definitions["font_trace_state"] = va + 65536
+plt = elf.get_section_by_name(".plt")
+relplt = elf.get_section_by_name(".rela.plt")
+for i, rel in enumerate(relplt.iter_relocations()):
+    if elf.get_section(relplt["sh_link"]).get_symbol(rel["r_info_sym"]).name == "__android_log_print":
+        definitions["font_log"] = plt["sh_addr"] + 32 + i*16
+        break
+assert "font_log" in definitions
+definitions["original_font_quad_continuation"] = font_quad_entry + 12
 phoff, phentsize, phnum = elf["e_phoff"], elf["e_phentsize"], elf["e_phnum"]
 has_phdr = any(s["p_type"] == "PT_PHDR" for s in elf.iter_segments())
-new_phnum = phnum + 1 + (0 if has_phdr else 1)
+new_phnum = phnum + 2 + (0 if has_phdr else 1)
 assert phentsize == 56 and new_phnum*56 <= 4096
 headers = []
 new_phoff = new_offset + 0xf000
@@ -51,6 +63,7 @@ if not has_phdr:
     # PT_PHDR precedes PT_LOAD entries as required by the ELF ABI.
     headers.insert(0,struct.pack("<IIQQQQQQ",6,4,new_phoff,va+0xf000,va+0xf000,new_phnum*56,new_phnum*56,8))
 headers.append(struct.pack("<IIQQQQQQ",1,5,new_offset,va,va,65536,65536,0x4000))
+headers.append(struct.pack("<IIQQQQQQ",1,6,new_offset+65536,va+65536,va+65536,16384,16384,0x4000))
 output[new_phoff:new_phoff+new_phnum*56] = b"".join(headers)
 struct.pack_into("<Q",output,32,new_phoff)
 struct.pack_into("<H",output,56,new_phnum)
@@ -86,6 +99,13 @@ assembly += "".join(".inst " + hex(word) + "\n" for word in struct.unpack("<3I",
 assembly += "adrp x16, original_map_continuation\nadd x16,x16,:lo12:original_map_continuation\nbr x16\n"
 assembly += ".global original_set_error\n.type original_set_error,%function\noriginal_set_error:\n"
 assembly += "adrp x16, original_error_entry\nadd x16,x16,:lo12:original_error_entry\nbr x16\n"
+font_prefix = data[file_offset(font_quad_entry):file_offset(font_quad_entry)+12]
+font_instructions = list(Cs(CS_ARCH_ARM64, CS_MODE_ARM).disasm(font_prefix,font_quad_entry))
+print("Font hook prologue:", [(i.mnemonic,i.op_str) for i in font_instructions],flush=True)
+assert len(font_instructions)==3 and all(i.mnemonic in ("sub","stp","mov","add") for i in font_instructions), "Font prologue needs relocation"
+assembly += ".global original_font_quad\n.type original_font_quad,%function\noriginal_font_quad:\n"
+assembly += "".join(".inst "+hex(word)+"\n" for word in struct.unpack("<3I",font_prefix))
+assembly += "adrp x16, original_font_quad_continuation\nadd x16,x16,:lo12:original_font_quad_continuation\nbr x16\n"
 (work / "trampoline.S").write_text(assembly)
 subprocess.run([str(ndk / "aarch64-linux-android29-clang"), "-c", str(work / "trampoline.S"), "-o", str(work / "trampoline.o")],check=True)
 obj = ELFFile(io.BytesIO((work / "codec.o").read_bytes()))
@@ -129,6 +149,9 @@ for name, function in replacements.items():
     report["replacements"][name] = {"entry": address, "replacement": targets[function]}
 at = file_offset(language_setter)
 output[at:at+12] = jump(language_setter, targets["ru_set_language"])
+font_at = file_offset(font_quad_entry)
+output[font_at:font_at+12] = jump(font_quad_entry, targets["ru_font_quad"])
+report["font_trace"] = {"entry":font_quad_entry,"replacement":targets["ru_font_quad"],"state":definitions["font_trace_state"]}
 source.write_bytes(output)
 patched = ELFFile(io.BytesIO(source.read_bytes()))
 phdrs = [s for s in patched.iter_segments() if s["p_type"] == "PT_PHDR"]
