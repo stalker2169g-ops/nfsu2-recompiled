@@ -10,9 +10,10 @@ r.put64(r.symbols['g_mem_base']['st_value'],0x100000000)
 def write(at,data):r.uc.mem_write(0x100000000+at,data)
 def read(at,n):return bytes(r.uc.mem_read(0x100000000+at,n))
 def reg(name,value):r.uc.mem_write(r.symbols[name]['st_value'],struct.pack('<I',value))
-matches=[s for n,s in r.symbols.items() if '00573700' in n.lower()]
-print('JDLZ_SYMBOLS',[(s.name,hex(s['st_value'])) for s in matches],flush=True)
-assert len(matches)==1
+lookup=r.symbols['recomp_lookup']['st_value']
+decoder=r.call(lookup,0x573700)
+print('JDLZ_GAME_ENTRY',hex(decoder),flush=True)
+assert decoder
 def literal(raw):
     b=bytearray(16)
     for i in range(0,len(raw),8):
@@ -26,7 +27,7 @@ for n in (1,7,8,9,8193,65536,524288):
     write(0x10000,packed);write(0x200000,b'\xa5'*(n+32))
     write(0x900000,struct.pack('<III',0x12345678,0x10000,0x200000))
     reg('g_esp',0x900000)
-    r.call(matches[0]['st_value'],count=150000000)
+    r.call(decoder,count=150000000)
     actual=read(0x200000,n)
     assert actual==raw,(n,next((i for i,(a,b) in enumerate(zip(actual,raw)) if a!=b),-1))
     assert read(0x200000+n,32)==b'\xa5'*32
