@@ -1,0 +1,55 @@
+name: Publish font rendering diagnostics
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-font-trace.yml']
+permissions:
+  actions: read
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require tested diagnostic APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(gh api repos/$GITHUB_REPOSITORY/actions/runs/40189741799 --jq .head_sha)" = 7a271b5a14842c3dc88eb5f59ec8be52c6c8865f
+          gh run watch 40189741799 --interval 10 --exit-status
+          gh run download 40189741799 --name NFSU2-ARM64-Cyrillic-native-fix --dir build/input
+      - name: Verify and prepare diagnostic release
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,zipfile,shutil
+          root=Path('build/input')
+          def one(name):
+              found=list(root.rglob(name))
+              assert len(found)==1,(name,found)
+              return found[0]
+          apk=one('app-debug.apk')
+          sha=hashlib.sha256(apk.read_bytes()).hexdigest()
+          assert sha==one('APK-SHA256.txt').read_text().split()[0]
+          report=json.loads(one('patch-report.json').read_text())
+          assert report['font_trace']['entry'] and report['font_trace']['state']
+          with zipfile.ZipFile(apk) as z:
+              assert hashlib.sha256(z.read('lib/arm64-v8a/libnfsu2_android.so')).hexdigest()==report['output_sha256']
+          assert 'ARM64_CODEC_VERIFIED_SHA256='+report['output_sha256'] in one('verification.log').read_text()
+          trace=one('font-trace-verification.log').read_text()
+          assert 'FONT_TRACE_HOOK_PRESERVED_GAME_QUAD' in trace
+          assert 'GAME_FONT_STREAM_CONTRACT_VERIFIED' in trace
+          out=Path('build/release');out.mkdir(parents=True,exist_ok=True)
+          name='NFSU2-ARM64-Font-Trace.apk'
+          shutil.copyfile(apk,out/name)
+          shutil.copyfile(one('patch-report.json'),out/'native-patch-report.json')
+          shutil.copyfile(one('font-trace-verification.log'),out/'font-trace-verification.log')
+          (out/'SHA256SUMS.txt').write_text(sha+'  '+name+'\n')
+          print('DIAGNOSTIC_APK_SHA256='+sha)
+          PY
+      - name: Publish diagnostic APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create arm64-font-trace-40189741799 build/release/* --prerelease --target "$GITHUB_SHA" --title "ARM64 font rendering diagnostics v1" --notes-file docs/FONT_TRACE_BUILD.md
