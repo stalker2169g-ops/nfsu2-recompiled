@@ -41,11 +41,10 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
           script: |
-            cd android
-            chmod +x gradlew
-            ./gradlew :fontrepaircheck:connectedDebugAndroidTest -PnfsPrebuiltNative --no-daemon --stacktrace --max-workers=2
-            mkdir -p ../build/font-repair-check
-            adb pull /sdcard/Android/data/com.nfsu2.fontrepaircheck/files/font-repair-preview.png ../build/font-repair-check/font-repair-preview.png
+            chmod +x android/gradlew
+            android/gradlew -p android :fontrepaircheck:connectedDebugAndroidTest -PnfsPrebuiltNative --no-daemon --stacktrace --max-workers=2
+            mkdir -p build/font-repair-check
+            adb pull /sdcard/Android/data/com.nfsu2.fontrepaircheck/files/font-repair-preview.png build/font-repair-check/font-repair-preview.png
       - uses: actions/upload-artifact@v4
         if: always()
         with:
