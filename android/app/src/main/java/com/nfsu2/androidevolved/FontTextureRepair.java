@@ -322,6 +322,9 @@ final class FontTextureRepair {
             out.write(0);if(i==0)out.write(0);
             int n=Math.min(8,raw.length-i);out.write(raw,i,n);i+=n;
         }
+        // The game refills its token flags before checking the packed-byte count.
+        // Include that final flag even when no output bytes remain.
+        if(raw.length>0&&raw.length%8==0)out.write(0);
         byte[] result=out.toByteArray();System.arraycopy("JDLZ".getBytes(StandardCharsets.US_ASCII),0,result,0,4);
         result[4]=2;result[5]=16;put32(result,8,raw.length);put32(result,12,result.length);return result;
     }
