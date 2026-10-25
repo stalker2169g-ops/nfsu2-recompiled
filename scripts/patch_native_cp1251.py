@@ -10,6 +10,7 @@ import subprocess
 import sys
 import lief
 from elftools.elf.elffile import ELFFile
+from capstone import Cs, CS_ARCH_ARM64, CS_MODE_ARM
 from native_codec_runner import NativeRunner
 
 EXPECTED = "c9bbe1165105f135eea4a3287cf7f870a02d8d433a973002418dafb302993c2c"
@@ -26,7 +27,7 @@ assert language_setter == 0x487c20, "Unexpected language setter"
 definitions = {n: symbols[n]["st_value"] for n in ("g_eax", "g_esp", "g_mem_base")}
 definitions.update(guest_language=0x97e7de8, runtime_memory=0x97e7d10,
                    original_set_error=bindings["SetLastError"],
-                   original_map_string=bindings["LCMapStringW"])
+                   original_map_continuation=bindings["LCMapStringW"]+12)
 binary = lief.ELF.parse(str(source))
 old_symbol_values = {n: binary.get_dynamic_symbol(n).value for n in definitions if n.startswith("g_")}
 segment = lief.ELF.Segment()
@@ -55,6 +56,16 @@ subprocess.run([str(ndk / "aarch64-linux-android29-clang"), "-O2", "-std=c11",
                 "-fvisibility=hidden", "-Wall", "-Wextra", "-Werror",
                 "-I" + str(work), "-c", "ports/russian_arm64/native_cp1251.c",
                 "-o", str(work / "codec.o")], check=True)
+# Preserve the three overwritten, PC-independent frame-setup instructions.
+map_entry = bindings["LCMapStringW"]
+original_prefix = bytes(binary.get_content_from_virtual_address(map_entry, 12))
+instructions = list(Cs(CS_ARCH_ARM64, CS_MODE_ARM).disasm(original_prefix, map_entry))
+assert len(instructions)==3 and all(i.mnemonic in ("sub","stp","mov","add") for i in instructions), "LCMap prologue requires relocation review"
+assembly = ".text\n.global original_map_string\n.type original_map_string,%function\noriginal_map_string:\n"
+assembly += "".join(".inst " + hex(word) + "\n" for word in struct.unpack("<3I",original_prefix))
+assembly += "adrp x16, original_map_continuation\nadd x16,x16,:lo12:original_map_continuation\nbr x16\n"
+(work / "trampoline.S").write_text(assembly)
+subprocess.run([str(ndk / "aarch64-linux-android29-clang"), "-c", str(work / "trampoline.S"), "-o", str(work / "trampoline.o")],check=True)
 obj = ELFFile(io.BytesIO((work / "codec.o").read_bytes()))
 for sec in obj.iter_sections():
     if sec["sh_type"] == "SHT_RELA":
@@ -65,7 +76,7 @@ for sec in obj.iter_sections():
     "/DISCARD/ : { *(.comment) *(.note*) *(.eh_frame*) } }")
 command = [str(ndk / "ld.lld"), "--no-relax", "--no-undefined", "-T", str(work / "codec.ld")]
 command += ["--defsym=" + name + "=" + hex(value) for name, value in definitions.items()]
-command += [str(work / "codec.o"), "-o", str(work / "codec.elf")]
+command += [str(work / "codec.o"), str(work / "trampoline.o"), "-o", str(work / "codec.elf")]
 subprocess.run(command, check=True)
 patch_elf = ELFFile(io.BytesIO((work / "codec.elf").read_bytes()))
 patch = patch_elf.get_section_by_name(".patch").data()
