@@ -22,10 +22,10 @@ jobs:
         run: |
           test "$(gh api repos/$GITHUB_REPOSITORY/actions/runs/40185877463 --jq .head_sha)" = e086538147f29b8f4137e9396b5892dd1c397387
           gh run watch 40185877463 --interval 10 --exit-status
-          test "$(gh api repos/$GITHUB_REPOSITORY/actions/runs/40186370503 --jq .head_sha)" = dc5c52c8aa8e49fc738f0ba21cab517ea11d03ae
-          test "$(gh api repos/$GITHUB_REPOSITORY/contents/android/app/src/main/java/com/nfsu2/androidevolved/FontTextureRepair.java?ref=e086538147f29b8f4137e9396b5892dd1c397387 --jq .sha)" = "$(gh api repos/$GITHUB_REPOSITORY/contents/android/app/src/main/java/com/nfsu2/androidevolved/FontTextureRepair.java?ref=dc5c52c8aa8e49fc738f0ba21cab517ea11d03ae --jq .sha)"
-          gh run watch 40186370503 --interval 10 --exit-status
-          gh run download 40186370503 --name Android-font-repair-tests --dir build/font-checks
+          test "$(gh api repos/$GITHUB_REPOSITORY/actions/runs/40186603364 --jq .head_sha)" = 8c3772c26c63a234a17c7d24b14d5f74c7ac0401
+          test "$(gh api repos/$GITHUB_REPOSITORY/contents/android/app/src/main/java/com/nfsu2/androidevolved/FontTextureRepair.java?ref=e086538147f29b8f4137e9396b5892dd1c397387 --jq .sha)" = "$(gh api repos/$GITHUB_REPOSITORY/contents/android/app/src/main/java/com/nfsu2/androidevolved/FontTextureRepair.java?ref=8c3772c26c63a234a17c7d24b14d5f74c7ac0401 --jq .sha)"
+          gh run watch 40186603364 --interval 10 --exit-status
+          gh run download 40186603364 --name Android-font-repair-tests --dir build/font-checks
           gh run download 40185877463 --name NFSU2-ARM64-Cyrillic-native-fix --dir build/cyrillic-result
       - name: Match APK, native hash and ARM64 test evidence
         run: |
