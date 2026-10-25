@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['.github/workflows/inspect-arm64-native.yml']
+    paths: ['.github/workflows/inspect-arm64-native.yml', 'scripts/native_codec_runner.py']
 permissions:
   contents: read
 jobs:
