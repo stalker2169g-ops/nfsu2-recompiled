@@ -39,9 +39,13 @@ void ru_set_language(const char *language) {
        The pinned libc++ short-string representation is checked in ARM64 tests. */
     if(runtime_memory)return;
     const char *chosen="Spanish";
-    const char *known[]={"Russian","Spanish","English UK","French","German","Italian",
-        "Dutch","Swedish","Danish","Japanese","Korean","Chinese (Traditional)","Thai"};
-    for(unsigned i=0;i<sizeof(known)/sizeof(known[0]);i++)if(equal(language,known[i])){chosen=known[i];break;}
+    /* No absolute pointer tables: injected code must survive ASLR. */
+#define CHOOSE(s) if(equal(language,s))chosen=s
+    CHOOSE("Russian"); CHOOSE("Spanish"); CHOOSE("English UK"); CHOOSE("French");
+    CHOOSE("German"); CHOOSE("Italian"); CHOOSE("Dutch"); CHOOSE("Swedish");
+    CHOOSE("Danish"); CHOOSE("Japanese"); CHOOSE("Korean");
+    CHOOSE("Chinese (Traditional)"); CHOOSE("Thai");
+#undef CHOOSE
     unsigned n=0;while(chosen[n])n++;
     for(unsigned i=0;i<24;i++)guest_language[i]=0;
     guest_language[0]=(unsigned char)(n*2);
