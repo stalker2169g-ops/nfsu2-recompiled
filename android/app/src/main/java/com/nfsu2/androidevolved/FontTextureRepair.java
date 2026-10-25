@@ -362,8 +362,10 @@ final class FontTextureRepair {
     static Built rebuild(byte[] originalEnglish,byte[] originalTextures) throws Exception {
         byte[] english=originalEnglish.clone();List<Font> fonts=fonts(english);List<Texture> textures=textures(originalTextures);
         Map<Integer,Texture> byHash=new LinkedHashMap<>();for(Texture t:textures)byHash.put(t.hash,t);
+        textures.clear();
         if(byHash.isEmpty())throw new IOException("No texture template");
-        byte[] template=byHash.values().iterator().next().info;
+        Texture family=byHash.get(hash("conduitmditc_tt14i"));
+        byte[] template=(family==null?byHash.values().iterator().next():family).info;
         BitSet allowed=new BitSet();
         for(Font f:fonts) {
             pack(f,english,allowed);int hash=hash(f.texture);Texture old=byHash.get(hash);
