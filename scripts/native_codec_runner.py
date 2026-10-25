@@ -5,6 +5,7 @@ startup, Vulkan, game assets, or rendering.
 """
 import io
 import json
+import math
 import struct
 import sys
 from pathlib import Path
@@ -135,6 +136,10 @@ class NativeRunner:
                 if name == "strncmp":
                     left, right = left[:c], right[:c]
             result = (left > right) - (left < right)
+        elif name in ("sin", "cos", "tan", "sqrt", "exp", "log", "log10", "floor", "ceil"):
+            value = struct.unpack("<d", struct.pack("<Q", uc.reg_read(UC_ARM64_REG_D0)))[0]
+            answer = float(getattr(math, name)(value))
+            uc.reg_write(UC_ARM64_REG_D0, struct.unpack("<Q", struct.pack("<d", answer))[0])
         elif name == "__emutls_get_address":
             if a not in self.tls:
                 n, align, _, template = struct.unpack("<4Q", uc.mem_read(a, 32))
