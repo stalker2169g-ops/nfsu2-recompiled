@@ -7,7 +7,7 @@ r=NativeRunner(Path(sys.argv[1]).read_bytes())
 r.initialize()
 r.uc.mem_map(0x100000000,0x1000000)
 r.put64(r.symbols['g_mem_base']['st_value'],0x100000000)
-def write(at,data):r.uc.mem_write(0x100000000+at,data)
+def write(at,data):r.uc.mem_write(0x100000000+at,bytes(data))
 def read(at,n):return bytes(r.uc.mem_read(0x100000000+at,n))
 def reg(name,value):r.uc.mem_write(r.symbols[name]['st_value'],struct.pack('<I',value))
 lookup=r.symbols['recomp_lookup']['st_value']
