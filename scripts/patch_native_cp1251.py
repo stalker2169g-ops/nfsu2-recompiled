@@ -46,6 +46,8 @@ work.mkdir(parents=True, exist_ok=True)
 header = []
 for cp in (1251, 1252, 437):
     values = [ord(bytes([b]).decode("cp" + str(cp), errors="replace")) for b in range(256)]
+    if cp == 1252:
+        values = [b if value == 0xfffd else value for b, value in enumerate(values)]
     header.append("static const uint16_t table_" + str(cp) + "[256]={" +
                   ",".join(hex(v) for v in values) + "};")
 (work / "cp_tables.h").write_text("\n".join(header))

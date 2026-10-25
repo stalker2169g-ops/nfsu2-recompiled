@@ -77,6 +77,9 @@ def patched(path,base):
     for cp in (1251,437):
         data=bytes(range(256))
         assert t.multi(data,cp)==data.decode("cp"+str(cp),errors="replace")
+    western=bytes(range(256))
+    expected="".join(chr(b) if ch=="�" else ch for b,ch in enumerate(western.decode("cp1252",errors="replace")))
+    assert t.multi(western,1252)==expected
     assert t.multi("Привет 😀".encode(),65001)=="Привет 😀"
     assert t.wide("Привет 😀",65001)=="Привет 😀".encode()
     t.write(0x1000,b"\xcf\xf0")

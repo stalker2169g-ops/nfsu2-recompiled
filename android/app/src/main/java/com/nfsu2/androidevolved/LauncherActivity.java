@@ -226,8 +226,20 @@ public final class LauncherActivity extends Activity {
     private List<String[]> languages() {
         List<String[]> found = new ArrayList<>();
         File root = gameRoot();
+        File languageFolder = new File(root, "LANGUAGES");
+        File[] rootEntries = root.listFiles();
+        if (!languageFolder.isDirectory() && rootEntries != null)
+            for (File entry : rootEntries)
+                if (entry.isDirectory() && entry.getName().equalsIgnoreCase("LANGUAGES"))
+                    languageFolder = entry;
+        File[] files = languageFolder.listFiles();
+        if (files == null) return found;
         for (String[] language : LANGUAGES)
-            if (new File(root, "LANGUAGES/" + language[2] + ".bin").isFile()) found.add(language);
+            for (File file : files)
+                if (file.isFile() && file.getName().equalsIgnoreCase(language[2] + ".bin")) {
+                    found.add(language);
+                    break;
+                }
         return found;
     }
 
