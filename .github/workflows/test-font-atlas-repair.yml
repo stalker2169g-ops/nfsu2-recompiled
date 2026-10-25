@@ -44,7 +44,7 @@ jobs:
             chmod +x android/gradlew
             android/gradlew -p android :fontrepaircheck:connectedDebugAndroidTest -PnfsPrebuiltNative --no-daemon --stacktrace --max-workers=2
             mkdir -p build/font-repair-check
-            adb pull /sdcard/Android/data/com.nfsu2.fontrepaircheck/files/font-repair-preview.png build/font-repair-check/font-repair-preview.png
+            adb pull /sdcard/Download/nfsu2-font-repair-preview.png build/font-repair-check/font-repair-preview.png
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -127,8 +127,13 @@ public class FontTextureRepairTest {
             android.graphics.Rect dst=new android.graphics.Rect(x,15,x+g.w*3,15+g.h*3);
             canvas.drawBitmap(atlas,src,dst,paint);x+=g.w*3+18;
         }
-        File image=new File(context().getExternalFilesDir(null),"font-repair-preview.png");
-        try(FileOutputStream out=new FileOutputStream(image)){assertTrue(preview.compress(Bitmap.CompressFormat.PNG,100,out));}
+        android.content.ContentValues values=new android.content.ContentValues();
+        values.put(android.provider.MediaStore.Downloads.DISPLAY_NAME,"nfsu2-font-repair-preview.png");
+        values.put(android.provider.MediaStore.Downloads.MIME_TYPE,"image/png");
+        values.put(android.provider.MediaStore.Downloads.RELATIVE_PATH,"Download");
+        android.net.Uri image=context().getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,values);
+        assertNotNull(image);
+        try(java.io.OutputStream out=context().getContentResolver().openOutputStream(image)){assertTrue(preview.compress(Bitmap.CompressFormat.PNG,100,out));}
         preview.recycle();atlas.recycle();
     }
     @Test public void backsUpBothFilesAndIsIdempotent() throws Exception {
