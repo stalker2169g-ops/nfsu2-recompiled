@@ -8,6 +8,8 @@ on:
       - 'ports/russian_arm64/**'
       - 'scripts/patch_native_cp1251.py'
       - 'scripts/test_native_cp1251.py'
+      - 'android/app/build.gradle'
+      - 'android/app/src/main/java/com/nfsu2/androidevolved/LauncherActivity.java'
 concurrency:
   group: android-cyrillic-arm64
   cancel-in-progress: true
@@ -69,7 +71,7 @@ jobs:
               names=[n for n in z.namelist() if n.startswith('lib/') and n.endswith('.so')]
               assert names and all(n.startswith('lib/arm64-v8a/') for n in names)
               for name in names:
-                  assert z.read(name)==(Path('android/app/src/main/jniLibs')/name.removeprefix('lib/')).read_bytes()
+                  assert z.read(name)==(Path('android/app/src/main/jniLibs')/name.removeprefix('lib/')).read_bytes(), 'Packager changed verified library: '+name
           checksum=hashlib.sha256(apk.read_bytes()).hexdigest()
           Path('build/russian-codec/APK-SHA256.txt').write_text(checksum+'  NFSU2-ARM64-cyrillic-test.apk\n')
           print('VERIFIED APK SHA256:',checksum)
