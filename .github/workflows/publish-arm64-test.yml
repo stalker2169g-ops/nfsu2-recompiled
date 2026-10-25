@@ -56,4 +56,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create arm64-cyrillic-fix-40181999283 build/release/* --prerelease --target d7932ec2b581fb126224d8e9fb04f65e54a12a65 --title "ARM64 Cyrillic fix — verified native CP1251" --notes-file docs/CYRILLIC_ARM64_TEST_REPORT.md
+          gh release create arm64-cyrillic-fix-40181999283 build/release/* --prerelease --target "$GITHUB_SHA" --title "ARM64 Cyrillic fix — verified native CP1251" --notes-file docs/CYRILLIC_ARM64_TEST_REPORT.md
