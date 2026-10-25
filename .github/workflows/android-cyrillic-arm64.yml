@@ -10,6 +10,9 @@ on:
       - 'scripts/test_native_cp1251.py'
       - 'android/app/build.gradle'
       - 'android/app/src/main/java/com/nfsu2/androidevolved/LauncherActivity.java'
+      - 'android/app/src/main/java/com/nfsu2/androidevolved/FontTextureRepair.java'
+      - 'android/settings.gradle'
+      - 'android/gradle.properties'
 concurrency:
   group: android-cyrillic-arm64
   cancel-in-progress: true
