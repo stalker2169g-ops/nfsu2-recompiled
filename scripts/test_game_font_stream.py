@@ -20,6 +20,7 @@ def literal(raw):
         b.append(0)
         if not i:b.append(0)
         b.extend(raw[i:i+8])
+    if len(raw)%8==0:b.append(0)
     struct.pack_into('<4sBBHII',b,0,b'JDLZ',2,16,0,len(raw),len(b))
     return b
 for n in (1,7,8,9,8193,65536,524288):
@@ -33,3 +34,27 @@ for n in (1,7,8,9,8193,65536,524288):
     assert read(0x200000+n,32)==b'\xa5'*32
     print('GAME_JDLZ_OK',n,'packed',len(packed),flush=True)
 print('GAME_FONT_STREAM_CONTRACT_VERIFIED',flush=True)
+
+# Capture the actual game's generated font quad arguments before the graphics backend.
+from unicorn import UC_HOOK_CODE
+from unicorn.arm64_const import UC_ARM64_REG_PC
+quad=r.call(lookup,0x51bfc0)
+draw=r.call(lookup,0x519fc0)
+captured=[]
+def capture(uc,address,size,data):
+    sp=struct.unpack('<I',uc.mem_read(r.symbols['g_esp']['st_value'],4))[0]
+    values=struct.unpack('<12I',read(sp+4,48))
+    captured.append(values)
+    uc.reg_write(UC_ARM64_REG_PC,r.STOP)
+r.uc.hook_add(UC_HOOK_CODE,capture,begin=draw,end=draw)
+write(0x3000,bytes(256));write(0x3008,struct.pack('<I',0x4000))
+write(0x4000,bytes(256));write(0x4044,struct.pack('<HH',512,256))
+write(0x2000,struct.pack('<HBBHH8B',0x41f,16,20,182,23,0,2,6,0,0,0,15,0))
+write(0x5000,bytes(256))
+write(0x7844f8,struct.pack('<f',1.0))
+write(0x900000,struct.pack('<8I',0x12345678,0x2000,0x5000,0x42c80000,0x42c80000,0xffffffff,0,0))
+reg('g_esp',0x900000);reg('g_ecx',0x3000)
+r.call(quad)
+assert len(captured)==1
+print('GAME_FONT_QUAD_ARGS',captured[0],flush=True)
+print('GAME_FONT_QUAD_FLOATS',struct.unpack('<12f',struct.pack('<12I',*captured[0])),flush=True)
