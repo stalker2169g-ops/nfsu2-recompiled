@@ -1,0 +1,86 @@
+name: Android ARM64 Cyrillic fix
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/android-cyrillic-arm64.yml'
+      - 'ports/russian_arm64/**'
+      - 'scripts/patch_native_cp1251.py'
+      - 'scripts/test_native_cp1251.py'
+concurrency:
+  group: android-cyrillic-arm64
+  cancel-in-progress: true
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Install SDK, native compiler and verification tools
+        run: |
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358'
+          python3 -m pip install --break-system-packages pyelftools capstone unicorn lief
+      - name: Extract pinned upstream ARM64 runtime
+        run: |
+          mkdir -p build
+          curl -fL --retry 3 https://github.com/codepdbh/nfsu2-recompiled/releases/download/v0.14.10/NFSU2-AndroidEvolved-v0.14.10-arm64.apk -o build/upstream.apk
+          echo '9c6c80b364bbe1399355b22a06fa9f4c16f425229cae00ebee425843cb9cf282  build/upstream.apk' | sha256sum -c -
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          with zipfile.ZipFile('build/upstream.apk') as archive:
+              for name in archive.namelist():
+                  if name.startswith('lib/arm64-v8a/') and name.endswith('.so'):
+                      target=Path('android/app/src/main/jniLibs/arm64-v8a')/Path(name).name
+                      target.parent.mkdir(parents=True,exist_ok=True)
+                      target.write_bytes(archive.read(name))
+          PY
+          cp android/app/src/main/jniLibs/arm64-v8a/libnfsu2_android.so build/upstream-native.so
+      - name: Compile and inject native Cyrillic fix
+        run: python3 scripts/patch_native_cp1251.py android/app/src/main/jniLibs/arm64-v8a/libnfsu2_android.so
+      - name: Execute original and patched ARM64 codecs
+        run: |
+          python3 scripts/test_native_cp1251.py build/upstream-native.so android/app/src/main/jniLibs/arm64-v8a/libnfsu2_android.so | tee build/russian-codec/verification.log
+      - name: Build APK with verified patched native library
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug -PnfsAbi=arm64-v8a -PnfsPrebuiltNative --no-daemon --stacktrace --max-workers=2
+      - name: Verify final APK
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, zipfile
+          apk=Path('android/app/build/outputs/apk/debug/app-debug.apk')
+          with zipfile.ZipFile(apk) as z:
+              names=[n for n in z.namelist() if n.startswith('lib/') and n.endswith('.so')]
+              assert names and all(n.startswith('lib/arm64-v8a/') for n in names)
+              for name in names:
+                  assert z.read(name)==(Path('android/app/src/main/jniLibs')/name.removeprefix('lib/')).read_bytes()
+          checksum=hashlib.sha256(apk.read_bytes()).hexdigest()
+          Path('build/russian-codec/APK-SHA256.txt').write_text(checksum+'  NFSU2-ARM64-cyrillic-test.apk\n')
+          print('VERIFIED APK SHA256:',checksum)
+          PY
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose android/app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NFSU2-ARM64-Cyrillic-native-fix
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            build/russian-codec/patch-report.json
+            build/russian-codec/verification.log
+            build/russian-codec/APK-SHA256.txt
+          if-no-files-found: error
