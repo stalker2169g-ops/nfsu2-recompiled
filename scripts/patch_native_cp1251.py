@@ -8,7 +8,6 @@ from pathlib import Path
 import struct
 import subprocess
 import sys
-import lief
 from elftools.elf.elffile import ELFFile
 from capstone import Cs, CS_ARCH_ARM64, CS_MODE_ARM
 from native_codec_runner import NativeRunner
@@ -28,19 +27,32 @@ definitions = {n: symbols[n]["st_value"] for n in ("g_eax", "g_esp", "g_mem_base
 definitions.update(guest_language=0x97e7de8, runtime_memory=0x97e7d10,
                    original_set_error=bindings["SetLastError"],
                    original_map_continuation=bindings["LCMapStringW"]+12)
-binary = lief.ELF.parse(str(source))
-old_symbol_values = {n: binary.get_dynamic_symbol(n).value for n in definitions if n.startswith("g_")}
-segment = lief.ELF.Segment()
-segment.type = lief.ELF.Segment.TYPE.LOAD
-segment.flags = lief.ELF.Segment.FLAGS.R | lief.ELF.Segment.FLAGS.X
-segment.alignment = 0x4000
-segment.virtual_address = (max(s.virtual_address + s.virtual_size for s in binary.segments) + 0x1ffff) & ~0xffff
-segment.physical_address = segment.virtual_address
-segment.content = [0] * 65536
-added = binary.add(segment)
-for name, value in old_symbol_values.items():
-    assert binary.get_dynamic_symbol(name).value == value, "ELF addition moved existing code/data"
-va = added.virtual_address
+# Add a new load segment without moving any original bytes or virtual addresses.
+# The enlarged program-header table lives in the last page of that segment.
+original_symbols = {n: symbols[n]["st_value"] for n in definitions if n.startswith("g_")}
+va = (max(s["p_vaddr"] + s["p_memsz"] for s in elf.iter_segments()
+          if s["p_type"] == "PT_LOAD") + 0x3fff) & ~0x3fff
+new_offset = (len(data) + 0x3fff) & ~0x3fff
+output = bytearray(data)
+output.extend(bytes(new_offset + 65536 - len(output)))
+phoff, phentsize, phnum = elf["e_phoff"], elf["e_phentsize"], elf["e_phnum"]
+assert phentsize == 56 and (phnum+1)*56 <= 4096
+headers = []
+new_phoff = new_offset + 0xf000
+for i in range(phnum):
+    fields = list(struct.unpack_from("<IIQQQQQQ", data, phoff+i*56))
+    if fields[0] == 6:  # PT_PHDR
+        fields[2:7] = [new_phoff, va+0xf000, va+0xf000, (phnum+1)*56, (phnum+1)*56]
+    headers.append(struct.pack("<IIQQQQQQ",*fields))
+headers.append(struct.pack("<IIQQQQQQ",1,5,new_offset,va,va,65536,65536,0x4000))
+output[new_phoff:new_phoff+(phnum+1)*56] = b"".join(headers)
+struct.pack_into("<Q",output,32,new_phoff)
+struct.pack_into("<H",output,56,phnum+1)
+def file_offset(address):
+    for seg in elf.iter_segments():
+        if seg["p_type"]=="PT_LOAD" and seg["p_vaddr"]<=address<seg["p_vaddr"]+seg["p_filesz"]:
+            return seg["p_offset"]+address-seg["p_vaddr"]
+    raise ValueError("Unmapped patch address "+hex(address))
 work = Path("build/russian-codec")
 work.mkdir(parents=True, exist_ok=True)
 header = []
@@ -60,7 +72,7 @@ subprocess.run([str(ndk / "aarch64-linux-android29-clang"), "-O2", "-std=c11",
                 "-o", str(work / "codec.o")], check=True)
 # Preserve the three overwritten, PC-independent frame-setup instructions.
 map_entry = bindings["LCMapStringW"]
-original_prefix = bytes(binary.get_content_from_virtual_address(map_entry, 12))
+original_prefix = data[file_offset(map_entry):file_offset(map_entry)+12]
 instructions = list(Cs(CS_ARCH_ARM64, CS_MODE_ARM).disasm(original_prefix, map_entry))
 assert len(instructions)==3 and all(i.mnemonic in ("sub","stp","mov","add") for i in instructions), "LCMap prologue requires relocation review"
 assembly = ".text\n.global original_map_string\n.type original_map_string,%function\noriginal_map_string:\n"
@@ -82,9 +94,9 @@ command += [str(work / "codec.o"), str(work / "trampoline.o"), "-o", str(work / 
 subprocess.run(command, check=True)
 patch_elf = ELFFile(io.BytesIO((work / "codec.elf").read_bytes()))
 patch = patch_elf.get_section_by_name(".patch").data()
-assert len(patch) <= 65536, "Codec does not fit reserved segment"
+assert len(patch) <= 0xf000, "Codec does not fit reserved segment"
 targets = {s.name: s["st_value"] for s in patch_elf.get_section_by_name(".symtab").iter_symbols()}
-binary.patch_address(va, list(patch))
+output[new_offset:new_offset+len(patch)] = patch
 
 def jump(at, target):
     pages = ((target & ~0xfff) - (at & ~0xfff)) >> 12
@@ -103,14 +115,15 @@ report = {"input_sha256": EXPECTED, "segment_va": va, "definitions": definitions
           "bindings": bindings, "language_setter": language_setter, "replacements": {}}
 for name, function in replacements.items():
     address = bindings[name]
-    assert len(binary.get_content_from_virtual_address(address, 12)) == 12
-    binary.patch_address(address, list(jump(address, targets[function])))
+    at = file_offset(address)
+    output[at:at+12] = jump(address, targets[function])
     report["replacements"][name] = {"entry": address, "replacement": targets[function]}
-binary.patch_address(language_setter, list(jump(language_setter, targets["ru_set_language"])))
-binary.write(str(source))
+at = file_offset(language_setter)
+output[at:at+12] = jump(language_setter, targets["ru_set_language"])
+source.write_bytes(output)
 patched = ELFFile(io.BytesIO(source.read_bytes()))
 patched_symbols = {s.name: s["st_value"] for s in patched.get_section_by_name(".dynsym").iter_symbols()}
-for name, value in old_symbol_values.items():
+for name, value in original_symbols.items():
     assert patched_symbols[name] == value, "Written ELF changed runtime ABI"
 report["output_sha256"] = hashlib.sha256(source.read_bytes()).hexdigest()
 (work / "patch-report.json").write_text(json.dumps(report, indent=2))
