@@ -87,6 +87,7 @@ final class Diagnostics {
             info.append("language=").append(GameOptions.language(context)).append('\n');
             add(zip, "informe.txt", info.toString().getBytes(StandardCharsets.UTF_8));
             add(zip, "logcat.txt", logcat(0));
+            add(zip, "font-resources.txt", fontResources().getBytes(StandardCharsets.UTF_8));
             ActivityManager manager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
             if (Build.VERSION.SDK_INT >= 30 && manager != null) addExitInfo(zip, manager, context);
         } catch (Exception error) {
@@ -167,6 +168,28 @@ final class Diagnostics {
             throw error;
         }
         return "Descargas/NFSU2/" + report.getName();
+    }
+
+    private static String fontResources() {
+        StringBuilder out=new StringBuilder("Font trace build v1\n");
+        File root=new File(android.os.Environment.getExternalStorageDirectory(),"nfsu2");
+        File dir=FontTextureRepair.child(root,"LANGUAGES");
+        File[] files=dir.listFiles();
+        if(files==null)return out.append("Cannot list LANGUAGES\n").toString();
+        Arrays.sort(files,(a,b)->a.getName().compareTo(b.getName()));
+        for(File f:files) {
+            out.append(f.getName()).append(" bytes=").append(f.length());
+            String name=f.getName().toLowerCase(Locale.ROOT);
+            if(f.isFile()&&(name.equals("english.bin")||name.equals("languagetextures.bin")||name.endsWith(".before-font-repair")))
+                try{out.append(" sha256=").append(FontTextureRepair.sha(f));}
+                catch(Exception error){out.append(" hash-error=").append(error);}
+            out.append('\n');
+        }
+        File marker=new File(dir,".nfsu2-font-repair-v1.properties");
+        if(marker.isFile())try {
+            out.append("\nRepair marker:\n").append(new String(java.nio.file.Files.readAllBytes(marker.toPath()),StandardCharsets.UTF_8));
+        }catch(Exception error){out.append(error);}
+        return out.toString();
     }
 
     private static void add(ZipOutputStream zip, String name, byte[] data) throws IOException {

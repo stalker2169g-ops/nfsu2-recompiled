@@ -11,6 +11,7 @@ on:
       - 'scripts/test_game_font_stream.py'
       - 'android/app/build.gradle'
       - 'android/app/src/main/java/com/nfsu2/androidevolved/LauncherActivity.java'
+      - 'android/app/src/main/java/com/nfsu2/androidevolved/Diagnostics.java'
       - 'android/app/src/main/java/com/nfsu2/androidevolved/FontTextureRepair.java'
       - 'android/settings.gradle'
       - 'android/gradle.properties'

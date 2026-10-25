@@ -173,9 +173,12 @@ void ru_font_quad(void) {
         if(texture) {
             uint32_t hash=rd(texture+36),slot=0;
             while(slot<16&&font_trace_state[slot*4]&&font_trace_state[slot*4]!=hash)slot++;
-            if(slot<16&&font_trace_state[slot*4+1]<4) {
+            unsigned code=font_u16(glyph);
+            unsigned group=(code>=0x400&&code<=0x4ff)?2:3;
+            if(slot<16&&font_trace_state[slot*4+group]<4) {
                 font_trace_state[slot*4]=hash;
                 unsigned sample=font_trace_state[slot*4+1]++;
+                font_trace_state[slot*4+group]++;
                 font_log(4,"NFSU2","FONT_TRACE sample=%u char=%04x font=%08x real=%08x glyph=%08x texture=%08x hash=%08x name=%.*s dims=%ux%u xy=%u,%u size=%ux%u",
                     sample,font_u16(glyph),font,real,glyph,texture,hash,24,(char*)p(texture+12),
                     font_u16(texture+68),font_u16(texture+70),font_u16(glyph+4),font_u16(glyph+6),p(glyph)[2],p(glyph)[3]);
