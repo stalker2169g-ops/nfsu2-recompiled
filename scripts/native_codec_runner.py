@@ -139,6 +139,8 @@ class NativeRunner:
                 if template:
                     uc.mem_write(self.tls[a], bytes(uc.mem_read(template, n)))
             result = self.tls[a]
+        elif name == "syscall" and a in (172, 178):
+            result = 1234
         elif name == "__cxa_guard_acquire":
             result = int(uc.mem_read(a, 1)[0] == 0)
         elif name == "__cxa_guard_release":
@@ -153,7 +155,7 @@ class NativeRunner:
         elif name in ("getenv", "getauxval"):
             pass
         else:
-            raise RuntimeError("Host stub required: " + name + " caller " + hex(uc.reg_read(UC_ARM64_REG_LR)))
+            raise RuntimeError("Host stub required: " + name + " args " + str(args) + " caller " + hex(uc.reg_read(UC_ARM64_REG_LR)))
         uc.reg_write(UC_ARM64_REG_X0, result & 0xffffffffffffffff)
         uc.reg_write(UC_ARM64_REG_PC, uc.reg_read(UC_ARM64_REG_LR))
 
