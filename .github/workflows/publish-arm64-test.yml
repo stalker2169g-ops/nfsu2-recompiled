@@ -20,9 +20,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          test "$(gh api repos/$GITHUB_REPOSITORY/actions/runs/40181999283 --jq .head_sha)" = d7932ec2b581fb126224d8e9fb04f65e54a12a65
-          gh run watch 40181999283 --interval 10 --exit-status
-          gh run download 40181999283 --name NFSU2-ARM64-Cyrillic-native-fix --dir build/cyrillic-result
+          test "$(gh api repos/$GITHUB_REPOSITORY/actions/runs/40185877463 --jq .head_sha)" = e086538147f29b8f4137e9396b5892dd1c397387
+          gh run watch 40185877463 --interval 10 --exit-status
+          test "$(gh api repos/$GITHUB_REPOSITORY/actions/runs/40185877376 --jq .head_sha)" = e086538147f29b8f4137e9396b5892dd1c397387
+          gh run watch 40185877376 --interval 10 --exit-status
+          gh run download 40185877376 --name Android-font-repair-tests --dir build/font-checks
+          gh run download 40185877463 --name NFSU2-ARM64-Cyrillic-native-fix --dir build/cyrillic-result
       - name: Match APK, native hash and ARM64 test evidence
         run: |
           python3 - <<'PY'
@@ -43,9 +46,15 @@ jobs:
               assert hashlib.sha256(z.read('lib/arm64-v8a/libnfsu2_android.so')).hexdigest()==native_hash
           assert 'ARM64_CODEC_VERIFIED_SHA256='+native_hash in log.read_text()
           assert 'bias=0x1000000000' in log.read_text()
+          tests=list(Path('build/font-checks').rglob('TEST-*.xml'))
+          import xml.etree.ElementTree as ET
+          suites=[ET.parse(t).getroot() for t in tests]
+          assert suites and sum(int(s.get('tests','0')) for s in suites)>=6
+          assert all(int(s.get('failures','0'))==0 and int(s.get('errors','0'))==0 for s in suites)
           out=Path('build/release');out.mkdir(parents=True,exist_ok=True)
-          name='NFSU2-ARM64-Cyrillic-Fix-test.apk'
+          name='NFSU2-ARM64-Font-Repair-test.apk'
           shutil.copyfile(apk,out/name)
+          shutil.copyfile(Path('docs/FONT_RESOURCE_REPAIR_REPORT.md'),out/'FONT_RESOURCE_REPAIR_REPORT.md')
           shutil.copyfile(report,out/'native-patch-report.json')
           shutil.copyfile(log,out/'ARM64-codec-verification.log')
           (out/'SHA256SUMS.txt').write_text(checksum+'  '+name+'\n')
@@ -56,4 +65,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create arm64-cyrillic-fix-40181999283 build/release/* --prerelease --target "$GITHUB_SHA" --title "ARM64 Cyrillic fix — verified native CP1251" --notes-file docs/CYRILLIC_ARM64_TEST_REPORT.md
+          gh release create arm64-font-repair-40185877463 build/release/* --prerelease --target "$GITHUB_SHA" --title "ARM64 Russian font resource repair — test build" --notes-file docs/FONT_RESOURCE_REPAIR_REPORT.md
