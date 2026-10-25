@@ -43,9 +43,9 @@ plt = elf.get_section_by_name(".plt")
 relplt = elf.get_section_by_name(".rela.plt")
 for i, rel in enumerate(relplt.iter_relocations()):
     if elf.get_section(relplt["sh_link"]).get_symbol(rel["r_info_sym"]).name == "__android_log_print":
-        definitions["font_log"] = plt["sh_addr"] + 32 + i*16
+        definitions["font_log_entry"] = plt["sh_addr"] + 32 + i*16
         break
-assert "font_log" in definitions
+assert "font_log_entry" in definitions
 definitions["original_font_quad_continuation"] = font_quad_entry + 12
 phoff, phentsize, phnum = elf["e_phoff"], elf["e_phentsize"], elf["e_phnum"]
 has_phdr = any(s["p_type"] == "PT_PHDR" for s in elf.iter_segments())
@@ -106,6 +106,8 @@ assert len(font_instructions)==3 and all(i.mnemonic in ("sub","stp","mov","add")
 assembly += ".global original_font_quad\n.type original_font_quad,%function\noriginal_font_quad:\n"
 assembly += "".join(".inst "+hex(word)+"\n" for word in struct.unpack("<3I",font_prefix))
 assembly += "adrp x16, original_font_quad_continuation\nadd x16,x16,:lo12:original_font_quad_continuation\nbr x16\n"
+assembly += ".global font_log\n.type font_log,%function\nfont_log:\n"
+assembly += "adrp x16, font_log_entry\nadd x16,x16,:lo12:font_log_entry\nbr x16\n"
 (work / "trampoline.S").write_text(assembly)
 subprocess.run([str(ndk / "aarch64-linux-android29-clang"), "-c", str(work / "trampoline.S"), "-o", str(work / "trampoline.o")],check=True)
 obj = ELFFile(io.BytesIO((work / "codec.o").read_bytes()))
