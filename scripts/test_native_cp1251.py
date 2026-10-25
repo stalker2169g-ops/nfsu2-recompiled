@@ -19,6 +19,13 @@ class Codec:
         self.uc.mem_map(0x100000000,0x800000)
         self.global_address=lambda name:base+self.runner.symbols[name]["st_value"]
         self.runner.put64(self.global_address("g_mem_base"),0x100000000)
+        # GuestMemory::address uses its first field (the reserved base pointer).
+        # Emulate that real object layout; no guest page/protection API is used here.
+        memory_object=self.runner.allocate(128)
+        self.runner.put64(memory_object,0x100000000)
+        self.runner.put64(self.base+0x97e7d10,memory_object)
+        initial=bytes(self.uc.mem_read(self.base+0x97e7de8,24))
+        assert initial[0]==14 and initial[1:8]==b"Spanish",initial
     def write(self,address,data):
         self.uc.mem_write(0x100000000+address,data)
     def read(self,address,count):
@@ -35,7 +42,10 @@ class Codec:
         address=self.runner.allocate(len(raw))
         self.uc.mem_write(address,raw)
         sym=self.runner.symbols["_Z16setGuestLanguagePKc"]["st_value"]
+        memory_object=self.runner.u64(self.base+0x97e7d10)
+        self.runner.put64(self.base+0x97e7d10,0)
         self.runner.call(self.base+sym,address)
+        self.runner.put64(self.base+0x97e7d10,memory_object)
         obj=bytes(self.uc.mem_read(self.base+0x97e7de8,24))
         assert obj[0]==len(name)*2 and obj[1:1+len(name)]==name.encode(),obj
     def multi(self,data,cp=1251,flags=0,terminated=False):
