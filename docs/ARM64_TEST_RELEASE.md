@@ -1,3 +1,7 @@
+# Исторический непатченный тест APK
+
+Этот APK не исправляет кириллицу. Текущая версия с нативным исправлением описана в [новом отчёте](CYRILLIC_ARM64_TEST_REPORT.md).
+
 ARM64 launcher test built from commit 182221982e2591124b68680d9c59888482a583e6 in Actions run 40142832311.
 
 The Java launcher is compiled from this repository. Native libraries are reused byte-for-byte from the official codepdbh/nfsu2-recompiled v0.14.10 ARM64 APK (upstream APK SHA256 9c6c80b364bbe1399355b22a06fa9f4c16f425229cae00ebee425843cb9cf282). This build requires no EXE as a build input.
