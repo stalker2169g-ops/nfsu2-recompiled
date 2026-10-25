@@ -25,7 +25,7 @@ language_setter = symbols["_Z16setGuestLanguagePKc"]["st_value"]
 assert language_setter == 0x487c20, "Unexpected language setter"
 definitions = {n: symbols[n]["st_value"] for n in ("g_eax", "g_esp", "g_mem_base")}
 definitions.update(guest_language=0x97e7de8, runtime_memory=0x97e7d10,
-                   original_set_error=bindings["SetLastError"],
+                   original_error_entry=bindings["SetLastError"],
                    original_map_continuation=bindings["LCMapStringW"]+12)
 # Add a new load segment without moving any original bytes or virtual addresses.
 # The enlarged program-header table lives in the last page of that segment.
@@ -78,6 +78,8 @@ assert len(instructions)==3 and all(i.mnemonic in ("sub","stp","mov","add") for 
 assembly = ".text\n.global original_map_string\n.type original_map_string,%function\noriginal_map_string:\n"
 assembly += "".join(".inst " + hex(word) + "\n" for word in struct.unpack("<3I",original_prefix))
 assembly += "adrp x16, original_map_continuation\nadd x16,x16,:lo12:original_map_continuation\nbr x16\n"
+assembly += ".global original_set_error\n.type original_set_error,%function\noriginal_set_error:\n"
+assembly += "adrp x16, original_error_entry\nadd x16,x16,:lo12:original_error_entry\nbr x16\n"
 (work / "trampoline.S").write_text(assembly)
 subprocess.run([str(ndk / "aarch64-linux-android29-clang"), "-c", str(work / "trampoline.S"), "-o", str(work / "trampoline.o")],check=True)
 obj = ELFFile(io.BytesIO((work / "codec.o").read_bytes()))
@@ -93,6 +95,7 @@ command += ["--defsym=" + name + "=" + hex(value) for name, value in definitions
 command += [str(work / "codec.o"), str(work / "trampoline.o"), "-o", str(work / "codec.elf")]
 subprocess.run(command, check=True)
 patch_elf = ELFFile(io.BytesIO((work / "codec.elf").read_bytes()))
+assert not any("AbsLongThunk" in s.name for s in patch_elf.get_section_by_name(".symtab").iter_symbols()), "Absolute linker thunk would break ASLR"
 patch = patch_elf.get_section_by_name(".patch").data()
 assert len(patch) <= 0xf000, "Codec does not fit reserved segment"
 targets = {s.name: s["st_value"] for s in patch_elf.get_section_by_name(".symtab").iter_symbols()}

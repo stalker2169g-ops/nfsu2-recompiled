@@ -113,6 +113,8 @@ def patched(path,base):
     t.write(0x1000,upper.encode("utf-16le"))
     assert t.hle("LCMapStringW",0x419,0x100,0x1000,len(upper),0x2000,len(upper))==len(upper)
     assert t.read(0x2000,len(upper)*2).decode("utf-16le")==upper.lower()
+    assert t.hle("LCMapStringW",0x419,0x400,0x1000,len(upper),0x2000,len(upper))==0
+    assert t.hle("GetLastError")==87
     t.language("Spanish")
     assert t.hle("GetACP")==1252
     assert t.hle("GetThreadLocale")==0x409

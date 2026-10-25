@@ -60,7 +60,9 @@ void ru_cp_info(void) {
     wr(out,cp==65001?4:1);p(out)[4]='?';result(1,2);
 }
 void ru_map_string(void) {
-    uint32_t sp=g_esp,locale=arg(0);
+    uint32_t sp=g_esp,locale=arg(0),flags=arg(1);
+    if((locale!=0&&locale!=0x409&&locale!=0x419&&locale!=0x400&&locale!=0x800&&locale!=0x7f)||
+       (flags!=0x100&&flags!=0x200)){failure(87,6);return;}
     if(locale==0x419)wr(sp+4,0x409);
     original_map_string();
     if(locale==0x419)wr(sp+4,locale);
