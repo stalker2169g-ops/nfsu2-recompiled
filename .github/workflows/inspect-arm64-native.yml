@@ -1,4 +1,4 @@
-name: Inspect ARM64 native runtime
+name: Inspect ARM64 codec and TLS
 on:
   workflow_dispatch:
   push:
