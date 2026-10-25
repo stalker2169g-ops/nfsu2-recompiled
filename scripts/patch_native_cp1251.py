@@ -36,18 +36,24 @@ new_offset = (len(data) + 0x3fff) & ~0x3fff
 output = bytearray(data)
 output.extend(bytes(new_offset + 65536 - len(output)))
 phoff, phentsize, phnum = elf["e_phoff"], elf["e_phentsize"], elf["e_phnum"]
-assert phentsize == 56 and (phnum+1)*56 <= 4096
+has_phdr = any(s["p_type"] == "PT_PHDR" for s in elf.iter_segments())
+new_phnum = phnum + 1 + (0 if has_phdr else 1)
+assert phentsize == 56 and new_phnum*56 <= 4096
 headers = []
 new_phoff = new_offset + 0xf000
 for i in range(phnum):
     fields = list(struct.unpack_from("<IIQQQQQQ", data, phoff+i*56))
     if fields[0] == 6:  # PT_PHDR
-        fields[2:7] = [new_phoff, va+0xf000, va+0xf000, (phnum+1)*56, (phnum+1)*56]
+        fields[2:7] = [new_phoff, va+0xf000, va+0xf000, new_phnum*56, new_phnum*56]
     headers.append(struct.pack("<IIQQQQQQ",*fields))
+if not has_phdr:
+    # Bionic must find the relocated header table in mapped memory.
+    # PT_PHDR precedes PT_LOAD entries as required by the ELF ABI.
+    headers.insert(0,struct.pack("<IIQQQQQQ",6,4,new_phoff,va+0xf000,va+0xf000,new_phnum*56,new_phnum*56,8))
 headers.append(struct.pack("<IIQQQQQQ",1,5,new_offset,va,va,65536,65536,0x4000))
-output[new_phoff:new_phoff+(phnum+1)*56] = b"".join(headers)
+output[new_phoff:new_phoff+new_phnum*56] = b"".join(headers)
 struct.pack_into("<Q",output,32,new_phoff)
-struct.pack_into("<H",output,56,phnum+1)
+struct.pack_into("<H",output,56,new_phnum)
 def file_offset(address):
     for seg in elf.iter_segments():
         if seg["p_type"]=="PT_LOAD" and seg["p_vaddr"]<=address<seg["p_vaddr"]+seg["p_filesz"]:
@@ -125,6 +131,14 @@ at = file_offset(language_setter)
 output[at:at+12] = jump(language_setter, targets["ru_set_language"])
 source.write_bytes(output)
 patched = ELFFile(io.BytesIO(source.read_bytes()))
+phdrs = [s for s in patched.iter_segments() if s["p_type"] == "PT_PHDR"]
+assert len(phdrs)==1
+phdr=phdrs[0]
+assert phdr["p_offset"]==patched["e_phoff"] and phdr["p_filesz"]==patched["e_phnum"]*56
+assert any(s["p_type"]=="PT_LOAD" and s["p_vaddr"]<=phdr["p_vaddr"]
+           and phdr["p_vaddr"]+phdr["p_filesz"]<=s["p_vaddr"]+s["p_filesz"]
+           for s in patched.iter_segments()), "Bionic cannot locate the mapped ELF headers"
+print("ELF loader headers verified; original PT_PHDR present:",has_phdr,flush=True)
 patched_symbols = {s.name: s["st_value"] for s in patched.get_section_by_name(".dynsym").iter_symbols()}
 for name, value in original_symbols.items():
     assert patched_symbols[name] == value, "Written ELF changed runtime ABI"
