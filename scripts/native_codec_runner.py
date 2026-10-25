@@ -150,7 +150,7 @@ class NativeRunner:
                       "pthread_mutex_destroy", "pthread_cond_init", "pthread_cond_destroy",
                       "pthread_rwlock_init", "__android_log_print", "__android_log_write"):
             pass
-        elif name == "getenv":
+        elif name in ("getenv", "getauxval"):
             pass
         else:
             raise RuntimeError("Host stub required: " + name + " caller " + hex(uc.reg_read(UC_ARM64_REG_LR)))
