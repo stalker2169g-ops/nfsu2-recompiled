@@ -1,0 +1,21 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'com.nfsu2.fontrepaircheck'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.nfsu2.fontrepaircheck'
+        minSdk 29
+        targetSdk 35
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+    sourceSets {
+        main.java {
+            srcDirs '../app/src/main/java'
+            include '**/FontTextureRepair.java'
+        }
+    }
+}
+dependencies {
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+}

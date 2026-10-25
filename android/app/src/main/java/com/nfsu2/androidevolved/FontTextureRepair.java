@@ -80,7 +80,13 @@ final class FontTextureRepair {
         return exact;
     }
     static boolean russianEnglish(File root) {
-        try { return ENGLISH_SHA.equals(sha(child(child(root,"LANGUAGES"),"English.bin"))); }
+        try {
+            File dir=child(root,"LANGUAGES");String current=sha(child(dir,"English.bin"));
+            if(ENGLISH_SHA.equals(current))return true;
+            File marker=new File(dir,MARKER);Properties state=new Properties();
+            if(marker.isFile())try(FileInputStream in=new FileInputStream(marker)){state.load(in);}
+            return ENGLISH_SHA.equals(state.getProperty("source.english"))&&current.equals(state.getProperty("patched.english"));
+        }
         catch(Exception ignored) {return false;}
     }
     static Result prepare(File root) throws Exception {return prepare(root,ENGLISH_SHA,TEXTURES_SHA);}
@@ -267,7 +273,7 @@ final class FontTextureRepair {
             if(g.w==0||g.h==0||g.code<32||(g.code>=127&&g.code<160))continue;
             String letter=String.valueOf((char)g.code);
             if(!paint.hasGlyph(letter)) {
-                if(g.code>=0x400&&g.code<0x500)throw new IOException("System font has no Cyrillic glyph U+"+Integer.toHexString(g.code));
+                if((g.code>=0x410&&g.code<=0x44f)||g.code==0x401||g.code==0x451)throw new IOException("System font has no Cyrillic glyph U+"+Integer.toHexString(g.code));
                 continue;
             }
             paint.getTextBounds(letter,0,letter.length(),bounds);

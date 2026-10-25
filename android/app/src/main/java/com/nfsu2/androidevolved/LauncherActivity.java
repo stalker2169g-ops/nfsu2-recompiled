@@ -53,7 +53,7 @@ public final class LauncherActivity extends Activity {
     private LinearLayout checksList, optionsList;
     private TextView status;
     private Button play, access;
-    private boolean playAfterProbe, checkingUpdates, resumed;
+    private boolean playAfterProbe, checkingUpdates, resumed, preparingFonts;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
 
@@ -237,7 +237,8 @@ public final class LauncherActivity extends Activity {
         for (String[] language : LANGUAGES)
             for (File file : files)
                 if (file.isFile() && file.getName().equalsIgnoreCase(language[2] + ".bin")) {
-                    found.add(language);
+                    found.add(language[1].equals("English UK") && FontTextureRepair.russianEnglish(root)
+                            ? new String[] {"Русский (English.bin)", "English UK", language[2]} : language);
                     break;
                 }
         return found;
@@ -245,6 +246,7 @@ public final class LauncherActivity extends Activity {
 
     private String languageLabel() {
         String current = GameOptions.language(this);
+        for (String[] language : languages()) if (language[1].equals(current)) return language[0];
         for (String[] language : LANGUAGES) if (language[1].equals(current)) return language[0];
         return current;
     }
@@ -457,6 +459,33 @@ public final class LauncherActivity extends Activity {
         if (processes != null) for (android.app.ActivityManager.RunningAppProcessInfo process : processes)
             if (process.uid == android.os.Process.myUid() && process.processName.equals(getPackageName() + ":game"))
                 android.os.Process.killProcess(process.pid);
+        if (preparingFonts) return;
+        preparingFonts = true;
+        play.setEnabled(false);
+        status.setText("Проверка ресурсов шрифтов…");
+        worker.execute(() -> {
+            try {
+                FontTextureRepair.Result repaired = FontTextureRepair.prepare(gameRoot());
+                if (repaired.changed)
+                    GameOptions.prefs(this).edit().putString(GameOptions.LANGUAGE, "English UK").apply();
+                runOnUiThread(() -> {
+                    preparingFonts = false;
+                    if (!isFinishing() && !isDestroyed()) { play.setEnabled(true); launchPrepared(); }
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    preparingFonts = false;
+                    if (!isFinishing() && !isDestroyed()) {
+                        play.setEnabled(true);
+                        status.setText("Не удалось восстановить шрифты.");
+                        message("Шрифты", error.toString());
+                    }
+                });
+            }
+        });
+    }
+
+    private void launchPrepared() {
         DisplayMetrics metrics = new DisplayMetrics();
         getWindowManager().getDefaultDisplay().getRealMetrics(metrics);
         int[] size = GameOptions.renderSize(this, Math.max(metrics.widthPixels, metrics.heightPixels),
