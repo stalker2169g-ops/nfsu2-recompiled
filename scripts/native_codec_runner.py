@@ -14,16 +14,17 @@ from unicorn.arm64_const import *
 
 class NativeRunner:
     STOP = 0x21000000
-    def __init__(self, data):
+    def __init__(self, data, base=0):
+        self.base = base
         self.data = data
         self.elf = ELFFile(io.BytesIO(data))
         self.uc = Uc(UC_ARCH_ARM64, UC_MODE_ARM)
         self.symbols = {s.name: s for s in self.elf.get_section_by_name(".dynsym").iter_symbols()}
         top = max(s["p_vaddr"] + s["p_memsz"] for s in self.elf.iter_segments() if s["p_type"] == "PT_LOAD")
-        self.uc.mem_map(0, (top + 0xffff) & ~0xffff)
+        self.uc.mem_map(base, (top + 0xffff) & ~0xffff)
         for seg in self.elf.iter_segments():
             if seg["p_type"] == "PT_LOAD":
-                self.uc.mem_write(seg["p_vaddr"], seg.data())
+                self.uc.mem_write(base + seg["p_vaddr"], seg.data())
         self.uc.mem_map(0x20000000, 0x100000)
         self.uc.mem_map(self.STOP, 0x1000)
         self.uc.mem_map(0x30000000, 0x200000)
@@ -45,14 +46,16 @@ class NativeRunner:
                 continue
             table = self.elf.get_section(sec["sh_link"])
             for rel in sec.iter_relocations():
-                kind, at = rel["r_info_type"], rel["r_offset"]
+                kind, at = rel["r_info_type"], base + rel["r_offset"]
                 if kind == 1027:
-                    value = rel["r_addend"]
+                    value = base + rel["r_addend"]
                 elif kind in (257, 1025, 1026):
                     sym = table.get_symbol(rel["r_info_sym"])
                     value = sym["st_value"]
                     if sym["st_shndx"] == "SHN_UNDEF":
                         value = self.stub(sym.name)
+                    elif sym["st_shndx"] != "SHN_ABS":
+                        value += base
                     value += rel["r_addend"]
                 elif kind == 1031:
                     sym = table.get_symbol(rel["r_info_sym"])
@@ -180,18 +183,18 @@ class NativeRunner:
                 at = block.find(needle)
                 if at >= 0 and at + 32 <= size:
                     fn = struct.unpack_from("<Q", block, at + 24)[0]
-                    if 0x440000 <= fn < 0xa000000:
+                    if self.base + 0x440000 <= fn < self.base + 0xa000000:
                         out[name] = fn
         return out
 
     def initialize(self):
         section = self.elf.get_section_by_name(".init_array")
         values = struct.unpack("<" + "Q" * (section["sh_size"] // 8),
-                               self.uc.mem_read(section["sh_addr"], section["sh_size"]))
+                               self.uc.mem_read(self.base + section["sh_addr"], section["sh_size"]))
         print("Initializers:", [hex(x) for x in values], flush=True)
         for i, address in enumerate(values):
             # Only initialize guest HLE maps; renderer/libc++ process startup is outside this test.
-            if address != 0x4a1ffc:
+            if address != self.base + 0x4a1ffc:
                 continue
             print("Initializing guest HLE", i, hex(address), flush=True)
             self.call(address)
