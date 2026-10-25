@@ -188,7 +188,10 @@ class NativeRunner:
                                self.uc.mem_read(section["sh_addr"], section["sh_size"]))
         print("Initializers:", [hex(x) for x in values], flush=True)
         for i, address in enumerate(values):
-            print("Initializing", i, hex(address), flush=True)
+            # Only initialize guest HLE maps; renderer/libc++ process startup is outside this test.
+            if address != 0x4a1ffc:
+                continue
+            print("Initializing guest HLE", i, hex(address), flush=True)
             self.call(address)
             found = self.bindings()
             print("Bindings", {k: hex(v) for k, v in found.items()}, flush=True)
