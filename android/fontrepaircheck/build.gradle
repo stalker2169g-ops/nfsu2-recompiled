@@ -1,4 +1,9 @@
 plugins { id 'com.android.application' }
+def fontCheckSources = layout.buildDirectory.dir('generated/fontCheckSources')
+tasks.register('copyFontCheckSources', Sync) {
+    from('../app/src/main/java') { include '**/FontTextureRepair.java' }
+    into(fontCheckSources)
+}
 android {
     namespace 'com.nfsu2.fontrepaircheck'
     compileSdk 35
@@ -8,13 +13,9 @@ android {
         targetSdk 35
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
-    sourceSets {
-        main.java {
-            srcDirs '../app/src/main/java'
-            include '**/FontTextureRepair.java'
-        }
-    }
+    sourceSets.main.java.srcDirs = [fontCheckSources.get().asFile]
 }
+tasks.named('preBuild').configure { dependsOn 'copyFontCheckSources' }
 dependencies {
     androidTestImplementation 'androidx.test:runner:1.6.2'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
