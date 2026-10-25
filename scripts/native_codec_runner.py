@@ -26,7 +26,10 @@ class NativeRunner:
                 self.uc.mem_write(seg["p_vaddr"], seg.data())
         self.uc.mem_map(0x20000000, 0x100000)
         self.uc.mem_map(self.STOP, 0x1000)
-        self.uc.mem_map(0x30000000, 0x10000)
+        self.uc.mem_map(0x30000000, 0x200000)
+        for seg in self.elf.iter_segments():
+            if seg['p_type'] == 'PT_TLS':
+                self.uc.mem_write(0x30001000, seg.data())
         self.uc.mem_map(0x40000000, 0x800000)
         self.uc.mem_map(0x50000000, 0x4000000)
         self.uc.reg_write(UC_ARM64_REG_TPIDR_EL0, 0x30000000)
@@ -51,6 +54,12 @@ class NativeRunner:
                     if sym["st_shndx"] == "SHN_UNDEF":
                         value = self.stub(sym.name)
                     value += rel["r_addend"]
+                elif kind == 1031:
+                    sym = table.get_symbol(rel["r_info_sym"])
+                    offset = 0x1000 + sym["st_value"] + rel["r_addend"]
+                    self.put64(at, self.stub("__tlsdesc_resolver"))
+                    self.put64(at + 8, offset)
+                    continue
                 else:
                     raise RuntimeError("Unsupported relocation " + str(kind))
                 self.put64(at, value)
@@ -93,7 +102,9 @@ class NativeRunner:
         args = [uc.reg_read(r) for r in (UC_ARM64_REG_X0, UC_ARM64_REG_X1, UC_ARM64_REG_X2, UC_ARM64_REG_X3)]
         a, b, c, d = args
         result = 0
-        if name in ("malloc", "_Znwm", "_Znam"):
+        if name == "__tlsdesc_resolver":
+            result = self.u64(a + 8)
+        elif name in ("malloc", "_Znwm", "_Znam"):
             result = self.allocate(a)
         elif name == "calloc":
             result = self.allocate(a * b)
