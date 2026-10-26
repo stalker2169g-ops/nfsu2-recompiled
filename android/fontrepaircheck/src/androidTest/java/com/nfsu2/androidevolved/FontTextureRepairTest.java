@@ -98,9 +98,10 @@ public class FontTextureRepairTest {
         assertEquals(64,font.width);assertEquals(64,font.height);
         List<FontTextureRepair.Texture> textures=FontTextureRepair.textures(built.textures);
         assertEquals(2,textures.size());
+        assertTrue(font.texture.startsWith("NFSRU2_V2_"));
         FontTextureRepair.Texture wanted=null;
         for(FontTextureRepair.Texture texture:textures)
-            if(texture.hash==FontTextureRepair.hash("conduitmditc_tt21i"))wanted=texture;
+            if(texture.hash==FontTextureRepair.hash(font.texture))wanted=texture;
         assertNotNull("Missing standard TT21I texture was not added",wanted);
         assertEquals(4096,wanted.image.length);
         Bitmap atlas=decode(wanted);
@@ -168,6 +169,46 @@ public class FontTextureRepairTest {
         assertArrayEquals(e,Files.readAllBytes(new File(dir,"English.bin").toPath()));
         assertArrayEquals(t,Files.readAllBytes(new File(dir,"LanguageTextures.bin").toPath()));
         assertFalse(new File(dir,"English.bin.before-font-repair").exists());
+    }
+    @Test public void upgradesValidatedV1PairWithoutReplacingOriginalBackups() throws Exception {
+        byte[] e=language(),t=texturePack();File root=root(e,t),dir=new File(root,"LANGUAGES");
+        String eh=FontTextureRepair.sha(e),th=FontTextureRepair.sha(t);
+        FontTextureRepair.prepare(root,eh,th);
+        File marker=new File(dir,".nfsu2-font-repair-v1.properties");
+        Properties state=new Properties();
+        try(FileInputStream in=new FileInputStream(marker)){state.load(in);}
+        state.remove("atlas.namespace");
+        try(FileOutputStream out=new FileOutputStream(marker)){state.store(out,"legacy v1 marker");}
+        assertTrue(FontTextureRepair.prepare(root,eh,th).changed);
+        assertArrayEquals(e,Files.readAllBytes(new File(dir,"English.bin.before-font-repair").toPath()));
+        assertArrayEquals(t,Files.readAllBytes(new File(dir,"LanguageTextures.bin.before-font-repair").toPath()));
+        try(FileInputStream in=new FileInputStream(marker)){state.load(in);}
+        assertEquals("2",state.getProperty("atlas.namespace"));
+        assertFalse(FontTextureRepair.prepare(root,eh,th).changed);
+    }
+    @Test public void privateTextureLeavesTheOriginalSharedTextureUntouched() throws Exception {
+        // Make the fixture's source texture share the font name, like a real global font pack.
+        byte[] source=texturePack();int oldHash=FontTextureRepair.hash("font_arial");
+        int sharedHash=FontTextureRepair.hash("conduitmditc_tt21i");
+        // Rebuild a valid fixture using the existing helper's metadata and stream layout.
+        int stream=132+32+32;
+        byte[] raw=FontTextureRepair.decode(Arrays.copyOfRange(source,stream,source.length));
+        FontTextureRepair.put32(raw,raw.length-156+36,sharedHash);
+        byte[] packed=FontTextureRepair.encode(raw);
+        byte[] header=Arrays.copyOf(source,stream);
+        FontTextureRepair.put32(header,140,sharedHash);
+        FontTextureRepair.put32(header,148,packed.length);
+        byte[] original=FontTextureRepair.join(header,packed);
+        FontTextureRepair.Texture before=FontTextureRepair.textures(original).get(0);
+        FontTextureRepair.Built built=FontTextureRepair.rebuild(language(),original);
+        FontTextureRepair.Font f=FontTextureRepair.fonts(built.english).get(0);
+        assertNotEquals(sharedHash,FontTextureRepair.hash(f.texture));
+        boolean found=false;
+        for(FontTextureRepair.Texture after:FontTextureRepair.textures(built.textures))if(after.hash==sharedHash) {
+            found=true;assertArrayEquals(before.image,after.image);
+            assertEquals(32,FontTextureRepair.u16(after.info,68));
+        }
+        assertTrue(found);
     }
     @Test public void neverOverwritesAnUnexpectedBackup() throws Exception {
         byte[] e=language(),t=texturePack();File root=root(e,t),dir=new File(root,"LANGUAGES");

@@ -28,7 +28,7 @@ import java.util.Properties;
 /** Repairs only the fingerprinted Russian-English/HD-texture mismatch.
  * No game artwork is bundled: glyphs are rendered with the device's system font.
  * Original language strings, conversion tables, glyph metrics and kerning remain unchanged;
- * glyph atlas coordinates are repacked and matched to newly rendered DXT3 images.
+ * glyph atlas coordinates are repacked and matched to uniquely named DXT3 images.
  */
 final class FontTextureRepair {
     static final String ENGLISH_SHA = "9cac7383781a0edb95fe585b61aaeee8504da06057e0042afd0902880337b11f";
@@ -55,7 +55,7 @@ final class FontTextureRepair {
     }
     static final class Font {
         String name, texture;
-        int width,height;
+        int width,height,textureReference;
         final List<Glyph> glyphs=new ArrayList<>();
     }
     static final class Box {
@@ -100,8 +100,13 @@ final class FontTextureRepair {
         if(marker.isFile())try(FileInputStream in=new FileInputStream(marker)){state.load(in);}
         String eh=sha(english),th=sha(textures);
         if(expectedEnglish.equals(state.getProperty("source.english"))&&expectedTextures.equals(state.getProperty("source.textures"))) {
-            if(eh.equals(state.getProperty("patched.english"))&&th.equals(state.getProperty("patched.textures")))
-                return new Result(false,true,"Compatible font resources already installed");
+            boolean installed=eh.equals(state.getProperty("patched.english"))&&th.equals(state.getProperty("patched.textures"));
+            if(installed&&"2".equals(state.getProperty("atlas.namespace")))
+                return new Result(false,true,"Compatible private font resources already installed");
+            if(installed) {
+                // Turn a validated v1 pair into a recoverable migration before restoring originals.
+                state.setProperty("phase","prepared");saveState(marker,state);
+            }
             if("prepared".equals(state.getProperty("phase"))) {
                 // Recover an interrupted two-file transaction only if all observed bytes are ours.
                 boolean knownEnglish=eh.equals(expectedEnglish)||eh.equals(state.getProperty("patched.english"));
@@ -124,6 +129,7 @@ final class FontTextureRepair {
         writeSync(ep,built.english);writeSync(tp,built.textures);
         state.setProperty("source.english",expectedEnglish);state.setProperty("source.textures",expectedTextures);
         state.setProperty("patched.english",sha(built.english));state.setProperty("patched.textures",sha(built.textures));
+        state.setProperty("atlas.namespace","2");
         state.setProperty("phase","prepared");saveState(marker,state);
         try {
             Files.move(tp.toPath(),textures.toPath(),StandardCopyOption.REPLACE_EXISTING);
@@ -199,7 +205,7 @@ final class FontTextureRepair {
             int kind=i32(english,at),size=i32(english,at+4);range(english,at+8,size);
             if(kind==0x30201) {
                 if(size<640)throw new IOException("Truncated FEngFont");
-                Font f=new Font();f.name=str(english,at+8,256);f.texture=str(english,at+264,256);
+                Font f=new Font();f.name=str(english,at+8,256);f.texture=str(english,at+264,256);f.textureReference=at+264;
                 int real=at+520,version=u16(english,real+8),count=u16(english,real+10);
                 if(version!=366&&version!=414&&version!=415)throw new IOException("Unknown RealFont version "+version);
                 int glyph=real+i32(english,real+20),maxX=1,maxY=1;
@@ -370,8 +376,16 @@ final class FontTextureRepair {
         Texture family=byHash.get(hash("conduitmditc_tt14i"));
         byte[] template=(family==null?byHash.values().iterator().next():family).info;
         BitSet allowed=new BitSet();
+        int aliasIndex=0;
         for(Font f:fonts) {
-            pack(f,english,allowed);int hash=hash(f.texture);Texture old=byHash.get(hash);
+            pack(f,english,allowed);Texture old=byHash.get(hash(f.texture));
+            f.texture="NFSRU2_V2_"+aliasIndex++;
+            int hash=hash(f.texture);
+            if(byHash.containsKey(hash))throw new IOException("Private font texture hash collision");
+            Arrays.fill(english,f.textureReference,f.textureReference+256,(byte)0);
+            byte[] reference=f.texture.getBytes(StandardCharsets.US_ASCII);
+            System.arraycopy(reference,0,english,f.textureReference,reference.length);
+            allowed.set(f.textureReference,f.textureReference+256);
             byte[] info=(old==null?template:old.info).clone();byte[] image=render(f);
             Arrays.fill(info,12,36,(byte)0);byte[] name=f.texture.toUpperCase(java.util.Locale.ROOT).getBytes(StandardCharsets.US_ASCII);
             if(name.length>=24)throw new IOException("Font texture name too long");
@@ -384,7 +398,7 @@ final class FontTextureRepair {
             byHash.put(hash,new Texture(hash,image,info));
         }
         for(int i=0;i<english.length;i++)if(english[i]!=originalEnglish[i]&&!allowed.get(i))
-            throw new IOException("Unexpected modification outside glyph coordinates");
+            throw new IOException("Unexpected modification outside glyph coordinates and texture references");
         List<Texture> entries=new ArrayList<>(byHash.values());entries.sort((a,b)->Integer.compareUnsigned(a.hash,b.hash));
         byte[] header=required(originalTextures,0x33310001),dataInfo=required(originalTextures,0x33320001);
         if(header.length!=124||i32(header,0)!=5||dataInfo.length!=24)throw new IOException("Unsupported TPK version");
