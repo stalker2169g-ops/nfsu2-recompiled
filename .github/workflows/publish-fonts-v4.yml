@@ -1,0 +1,30 @@
+name: Publish Russian fonts v4 owner build
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-fonts-v4.yml']
+permissions:
+  actions: read
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for APK build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run watch 40325323637 --interval 10 --exit-status
+          gh run download 40325323637 --name NFSU2-ARM64-Cyrillic-native-fix --dir build/input
+      - name: Prepare release
+        run: |
+          mkdir -p build/release
+          find build/input -name app-debug.apk -exec cp {} build/release/NFSU2-ARM64-Russian-Fonts-v4.apk \;
+          sha256sum build/release/NFSU2-ARM64-Russian-Fonts-v4.apk > build/release/SHA256SUMS.txt
+      - name: Publish APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create arm64-fonts-v4-40325323637 build/release/* --prerelease --target "$GITHUB_SHA" --title "ARM64 Russian fonts v4 — raw 32-bit atlases" --notes-file docs/FONTS_V4_OWNER_BUILD.md
