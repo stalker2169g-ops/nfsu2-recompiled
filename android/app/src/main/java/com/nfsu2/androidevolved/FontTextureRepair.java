@@ -89,7 +89,37 @@ final class FontTextureRepair {
         }
         catch(Exception ignored) {return false;}
     }
-    static Result prepare(File root) throws Exception {return prepare(root,ENGLISH_SHA,TEXTURES_SHA);}
+    static Result prepare(File root) throws Exception {return restoreOriginals(root);}
+    // Production no longer rebuilds atlases. Restore only bytes covered by our own marker/backups.
+    private static Result restoreOriginals(File root) throws Exception {
+        File dir=child(root,"LANGUAGES"),english=child(dir,"English.bin"),textures=child(dir,"LanguageTextures.bin");
+        if(!english.isFile()||!textures.isFile())return new Result(false,false,"No language resource pair");
+        String eh=sha(english),th=sha(textures);
+        if(ENGLISH_SHA.equals(eh)&&TEXTURES_SHA.equals(th))
+            return new Result(false,true,"Исходные файлы уже установлены. Автозамена отключена.");
+        File marker=new File(dir,MARKER);
+        if(!marker.isFile())return new Result(false,false,"No font-repair marker; files left unchanged");
+        Properties state=new Properties();
+        try(FileInputStream in=new FileInputStream(marker)){state.load(in);}
+        if(!ENGLISH_SHA.equals(state.getProperty("source.english"))||!TEXTURES_SHA.equals(state.getProperty("source.textures")))
+            throw new IOException("Маркер не соответствует исходным файлам. Резервные копии сохранены.");
+        boolean knownEnglish=ENGLISH_SHA.equals(eh)||eh.equals(state.getProperty("patched.english"));
+        boolean knownTextures=TEXTURES_SHA.equals(th)||th.equals(state.getProperty("patched.textures"));
+        if(!knownEnglish||!knownTextures)
+            throw new IOException("Файлы изменены вне исправления; автоматический откат остановлен.");
+        File eb=new File(dir,english.getName()+".before-font-repair");
+        File tb=new File(dir,textures.getName()+".before-font-repair");
+        if(!eb.isFile()||!tb.isFile()||!ENGLISH_SHA.equals(sha(eb))||!TEXTURES_SHA.equals(sha(tb)))
+            throw new IOException("Не найдены проверенные исходные резервные копии.");
+        state.setProperty("phase","restore-prepared");saveState(marker,state);
+        Files.copy(eb.toPath(),english.toPath(),StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(tb.toPath(),textures.toPath(),StandardCopyOption.REPLACE_EXISTING);
+        if(!ENGLISH_SHA.equals(sha(english))||!TEXTURES_SHA.equals(sha(textures)))
+            throw new IOException("Не удалось завершить возврат исходных файлов.");
+        state.setProperty("phase","restored");saveState(marker,state);
+        Log.i("NFSU2","Original language files restored; automatic atlas replacement disabled.");
+        return new Result(true,true,"Исходные файлы восстановлены. Автозамена отключена.");
+    }
     // Test seam for owned synthetic fixtures; production always uses the pinned hashes above.
     static Result prepare(File root,String expectedEnglish,String expectedTextures) throws Exception {
         File dir=child(root,"LANGUAGES"), english=child(dir,"English.bin"), textures=child(dir,"LanguageTextures.bin");

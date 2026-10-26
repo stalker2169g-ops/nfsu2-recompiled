@@ -462,15 +462,18 @@ public final class LauncherActivity extends Activity {
         if (preparingFonts) return;
         preparingFonts = true;
         play.setEnabled(false);
-        status.setText("Проверка ресурсов шрифтов…");
+        status.setText("Возврат исходных языковых файлов…");
         worker.execute(() -> {
             try {
                 FontTextureRepair.Result repaired = FontTextureRepair.prepare(gameRoot());
-                if (repaired.changed)
-                    GameOptions.prefs(this).edit().putString(GameOptions.LANGUAGE, "English UK").apply();
+                // Preserve the selected language during rollback.
                 runOnUiThread(() -> {
                     preparingFonts = false;
-                    if (!isFinishing() && !isDestroyed()) { play.setEnabled(true); launchPrepared(); }
+                    if (!isFinishing() && !isDestroyed()) {
+                        play.setEnabled(true);
+                        if (repaired.changed) android.widget.Toast.makeText(this,repaired.message,android.widget.Toast.LENGTH_LONG).show();
+                        launchPrepared();
+                    }
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {

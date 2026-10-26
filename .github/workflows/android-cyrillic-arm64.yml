@@ -40,11 +40,11 @@ jobs:
         run: |
           sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358'
           python3 -m pip install --break-system-packages pyelftools capstone unicorn lief
-      - name: Extract pinned upstream ARM64 runtime
+      - name: Extract the owner's pinned early APK runtime
         run: |
           mkdir -p build
-          curl -fL --retry 3 https://github.com/codepdbh/nfsu2-recompiled/releases/download/v0.14.10/NFSU2-AndroidEvolved-v0.14.10-arm64.apk -o build/upstream.apk
-          echo '9c6c80b364bbe1399355b22a06fa9f4c16f425229cae00ebee425843cb9cf282  build/upstream.apk' | sha256sum -c -
+          curl -fL --retry 3 https://github.com/stalker2169g-ops/nfsu2-recompiled/releases/download/arm64-cyrillic-fix-40181999283/NFSU2-ARM64-Cyrillic-Fix-test.apk -o build/upstream.apk
+          echo '81e36a590043fe2903309cb7f336704e540c61a7ef9730e6221dfda1e0133838  build/upstream.apk' | sha256sum -c -
           python3 - <<'PY'
           from pathlib import Path
           import zipfile
@@ -56,8 +56,6 @@ jobs:
                       target.write_bytes(archive.read(name))
           PY
           cp android/app/src/main/jniLibs/arm64-v8a/libnfsu2_android.so build/upstream-native.so
-      - name: Compile and inject native Cyrillic fix
-        run: python3 scripts/patch_native_cp1251.py android/app/src/main/jniLibs/arm64-v8a/libnfsu2_android.so
       - name: Build ARM64 APK
         working-directory: android
         run: |
@@ -75,6 +73,7 @@ jobs:
               for name in names:
                   assert z.read(name)==(Path('android/app/src/main/jniLibs')/name.removeprefix('lib/')).read_bytes(), 'Packager changed verified library: '+name
           checksum=hashlib.sha256(apk.read_bytes()).hexdigest()
+          Path('build/russian-codec').mkdir(parents=True,exist_ok=True)
           Path('build/russian-codec/APK-SHA256.txt').write_text(checksum+'  NFSU2-ARM64-cyrillic-test.apk\n')
           print('VERIFIED APK SHA256:',checksum)
           PY
@@ -84,6 +83,5 @@ jobs:
           name: NFSU2-ARM64-Cyrillic-native-fix
           path: |
             android/app/build/outputs/apk/debug/app-debug.apk
-            build/russian-codec/patch-report.json
             build/russian-codec/APK-SHA256.txt
           if-no-files-found: error
