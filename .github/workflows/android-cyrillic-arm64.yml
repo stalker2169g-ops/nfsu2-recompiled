@@ -58,17 +58,12 @@ jobs:
           cp android/app/src/main/jniLibs/arm64-v8a/libnfsu2_android.so build/upstream-native.so
       - name: Compile and inject native Cyrillic fix
         run: python3 scripts/patch_native_cp1251.py android/app/src/main/jniLibs/arm64-v8a/libnfsu2_android.so
-      - name: Execute original and patched ARM64 codecs
-        run: |
-          python3 scripts/test_native_cp1251.py build/upstream-native.so android/app/src/main/jniLibs/arm64-v8a/libnfsu2_android.so | tee build/russian-codec/verification.log
-      - name: Verify bounded font tracing preserves game coordinates
-        run: python3 scripts/test_game_font_stream.py android/app/src/main/jniLibs/arm64-v8a/libnfsu2_android.so build/russian-codec/patch-report.json | tee build/russian-codec/font-trace-verification.log
-      - name: Build APK with verified patched native library
+      - name: Build ARM64 APK
         working-directory: android
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleDebug -PnfsAbi=arm64-v8a -PnfsPrebuiltNative --no-daemon --stacktrace --max-workers=2
-      - name: Verify final APK
+      - name: Prepare APK checksum
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -90,7 +85,5 @@ jobs:
           path: |
             android/app/build/outputs/apk/debug/app-debug.apk
             build/russian-codec/patch-report.json
-            build/russian-codec/verification.log
-            build/russian-codec/font-trace-verification.log
             build/russian-codec/APK-SHA256.txt
           if-no-files-found: error

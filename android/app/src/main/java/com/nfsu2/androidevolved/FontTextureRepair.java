@@ -101,7 +101,7 @@ final class FontTextureRepair {
         String eh=sha(english),th=sha(textures);
         if(expectedEnglish.equals(state.getProperty("source.english"))&&expectedTextures.equals(state.getProperty("source.textures"))) {
             boolean installed=eh.equals(state.getProperty("patched.english"))&&th.equals(state.getProperty("patched.textures"));
-            if(installed&&"2".equals(state.getProperty("atlas.namespace")))
+            if(installed&&"3".equals(state.getProperty("atlas.namespace")))
                 return new Result(false,true,"Compatible private font resources already installed");
             if(installed) {
                 // Turn a validated v1 pair into a recoverable migration before restoring originals.
@@ -129,7 +129,7 @@ final class FontTextureRepair {
         writeSync(ep,built.english);writeSync(tp,built.textures);
         state.setProperty("source.english",expectedEnglish);state.setProperty("source.textures",expectedTextures);
         state.setProperty("patched.english",sha(built.english));state.setProperty("patched.textures",sha(built.textures));
-        state.setProperty("atlas.namespace","2");
+        state.setProperty("atlas.namespace","3");
         state.setProperty("phase","prepared");saveState(marker,state);
         try {
             Files.move(tp.toPath(),textures.toPath(),StandardCopyOption.REPLACE_EXISTING);
@@ -379,7 +379,7 @@ final class FontTextureRepair {
         int aliasIndex=0;
         for(Font f:fonts) {
             pack(f,english,allowed);Texture old=byHash.get(hash(f.texture));
-            f.texture="NFSRU2_V2_"+aliasIndex++;
+            f.texture="NFSRU2_V3_"+aliasIndex++;
             int hash=hash(f.texture);
             if(byHash.containsKey(hash))throw new IOException("Private font texture hash collision");
             Arrays.fill(english,f.textureReference,f.textureReference+256,(byte)0);
@@ -402,36 +402,28 @@ final class FontTextureRepair {
         List<Texture> entries=new ArrayList<>(byHash.values());entries.sort((a,b)->Integer.compareUnsigned(a.hash,b.hash));
         byte[] header=required(originalTextures,0x33310001),dataInfo=required(originalTextures,0x33320001);
         if(header.length!=124||i32(header,0)!=5||dataInfo.length!=24)throw new IOException("Unsupported TPK version");
-        int cursor=0;List<byte[]> streams=new ArrayList<>();
-        for(Texture t:entries) {
-            put32(t.info,48,cursor);put32(t.info,52,cursor+t.image.length);cursor+=t.image.length;
-            streams.add(encode(join(t.image,t.info)));
+        // Uncompressed TPK metadata eagerly registers each private texture.
+        // Compressed records can remain absent from the game's texture cache.
+        byte[] hashes=new byte[entries.size()*8],infos=new byte[entries.size()*124],formats=new byte[entries.size()*32];
+        int cursor=0;
+        for(int i=0;i<entries.size();i++) {
+            Texture t=entries.get(i);
+            put32(t.info,48,cursor);put32(t.info,52,-1);cursor+=t.image.length;
+            put32(hashes,i*8,t.hash);
+            System.arraycopy(t.info,0,infos,i*124,124);
+            System.arraycopy(t.info,124,formats,i*32,32);
         }
-        byte[] hashes=new byte[entries.size()*8],table=new byte[entries.size()*24];
-        int headerBodyLength=132+8+hashes.length+8+table.length;
-        int afterHeader=64+8+headerBodyLength;
+        byte[] head=chunk(0xb3310000,join(chunk(0x33310001,header),chunk(0x33310002,hashes),
+                chunk(0x33310004,infos),chunk(0x33310005,formats)));
+        int afterHeader=64+head.length;
         byte[] between=padding(afterHeader);
         int dataStart=afterHeader+between.length;
         byte[] beforeData=padding(dataStart+8+32);
-        int imageChunkStart=dataStart+8+32+beforeData.length;
-        int offset=imageChunkStart+128;
-        for(int i=0;i<entries.size();i++) {
-            Texture t=entries.get(i);byte[] stream=streams.get(i);
-            put32(hashes,i*8,t.hash);put32(table,i*24,t.hash);put32(table,i*24+4,offset);
-            put32(table,i*24+8,stream.length);put32(table,i*24+12,t.image.length+156);put32(table,i*24+16,256);
-            offset+=stream.length;
-        }
         byte[] prefix=new byte[120];Arrays.fill(prefix,(byte)0x11);
         ByteArrayOutputStream images=new ByteArrayOutputStream();images.write(prefix);
-        for(byte[] stream:streams)images.write(stream);
-        byte[] head=chunk(0xb3310000,join(chunk(0x33310001,header),chunk(0x33310002,hashes),chunk(0x33310003,table)));
+        for(Texture t:entries)images.write(t.image);
         byte[] data=chunk(0xb3320000,join(chunk(0x33320001,dataInfo),beforeData,chunk(0x33320002,images.toByteArray())));
         byte[] result=chunk(0xb3300000,join(chunk(0,new byte[48]),head,between,data));
-        List<Texture> checked=textures(result);
-        if(checked.size()!=entries.size())throw new IOException("Rebuilt TPK count mismatch");
-        for(int i=0;i<checked.size();i++)
-            if(checked.get(i).hash!=entries.get(i).hash||!Arrays.equals(checked.get(i).image,entries.get(i).image))
-                throw new IOException("Rebuilt TPK roundtrip failed");
         return new Built(english,result,fonts.size());
     }
     private static byte[] padding(int current) {

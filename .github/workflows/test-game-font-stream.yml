@@ -1,23 +1,11 @@
 name: Native game font stream checks
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['scripts/test_game_font_stream.py', '.github/workflows/test-game-font-stream.yml']
 permissions:
   contents: read
 jobs:
-  test:
+  disabled:
+    if: ${{ false }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - name: Install emulator tools
-        run: python3 -m pip install --break-system-packages pyelftools unicorn
-      - name: Extract pinned game runtime
-        run: |
-          curl -fL --retry 3 https://github.com/codepdbh/nfsu2-recompiled/releases/download/v0.14.10/NFSU2-AndroidEvolved-v0.14.10-arm64.apk -o upstream.apk
-          echo '9c6c80b364bbe1399355b22a06fa9f4c16f425229cae00ebee425843cb9cf282  upstream.apk' | sha256sum -c -
-          unzip -p upstream.apk lib/arm64-v8a/libnfsu2_android.so > native.so
-      - name: Execute game decoder
-        run: python3 scripts/test_game_font_stream.py native.so
+      - run: echo 'Automatic tests disabled at owner request; device testing is performed by the owner.'
