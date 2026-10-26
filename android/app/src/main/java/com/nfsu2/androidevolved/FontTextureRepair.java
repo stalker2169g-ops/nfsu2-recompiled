@@ -28,7 +28,7 @@ import java.util.Properties;
 /** Repairs only the fingerprinted Russian-English/HD-texture mismatch.
  * No game artwork is bundled: glyphs are rendered with the device's system font.
  * Original language strings, conversion tables, glyph metrics and kerning remain unchanged;
- * glyph atlas coordinates are repacked and matched to uniquely named DXT3 images.
+ * glyph atlas coordinates are repacked and matched to uniquely named A8R8G8B8 images.
  */
 final class FontTextureRepair {
     static final String ENGLISH_SHA = "9cac7383781a0edb95fe585b61aaeee8504da06057e0042afd0902880337b11f";
@@ -101,7 +101,7 @@ final class FontTextureRepair {
         String eh=sha(english),th=sha(textures);
         if(expectedEnglish.equals(state.getProperty("source.english"))&&expectedTextures.equals(state.getProperty("source.textures"))) {
             boolean installed=eh.equals(state.getProperty("patched.english"))&&th.equals(state.getProperty("patched.textures"));
-            if(installed&&"3".equals(state.getProperty("atlas.namespace")))
+            if(installed&&"4".equals(state.getProperty("atlas.namespace")))
                 return new Result(false,true,"Compatible private font resources already installed");
             if(installed) {
                 // Turn a validated v1 pair into a recoverable migration before restoring originals.
@@ -129,7 +129,7 @@ final class FontTextureRepair {
         writeSync(ep,built.english);writeSync(tp,built.textures);
         state.setProperty("source.english",expectedEnglish);state.setProperty("source.textures",expectedTextures);
         state.setProperty("patched.english",sha(built.english));state.setProperty("patched.textures",sha(built.textures));
-        state.setProperty("atlas.namespace","3");
+        state.setProperty("atlas.namespace","4");
         state.setProperty("phase","prepared");saveState(marker,state);
         try {
             Files.move(tp.toPath(),textures.toPath(),StandardCopyOption.REPLACE_EXISTING);
@@ -288,7 +288,17 @@ final class FontTextureRepair {
             canvas.scale(g.w/(float)bounds.width(),g.h/(float)bounds.height());
             canvas.drawText(letter,-bounds.left,-bounds.top,paint);canvas.restore();
         }
-        byte[] pixels=dxt3(bitmap);bitmap.recycle();return pixels;
+        int width=bitmap.getWidth(),height=bitmap.getHeight();
+        int[] colors=new int[width*height];
+        bitmap.getPixels(colors,0,width,0,0,width,height);
+        byte[] pixels=new byte[width*height*4];
+        for(int i=0;i<colors.length;i++) {
+            // D3DFMT_A8R8G8B8 is stored as BGRA on the little-endian guest.
+            int color=colors[i],at=i*4;
+            pixels[at]=(byte)color;pixels[at+1]=(byte)(color>>>8);
+            pixels[at+2]=(byte)(color>>>16);pixels[at+3]=(byte)(color>>>24);
+        }
+        bitmap.recycle();return pixels;
     }
     static byte[] dxt3(Bitmap bitmap) {
         int width=bitmap.getWidth(),height=bitmap.getHeight();byte[] out=new byte[width*height];int at=0;
@@ -379,7 +389,7 @@ final class FontTextureRepair {
         int aliasIndex=0;
         for(Font f:fonts) {
             pack(f,english,allowed);Texture old=byHash.get(hash(f.texture));
-            f.texture="NFSRU2_V3_"+aliasIndex++;
+            f.texture="NFSRU2_V4_"+aliasIndex++;
             int hash=hash(f.texture);
             if(byHash.containsKey(hash))throw new IOException("Private font texture hash collision");
             Arrays.fill(english,f.textureReference,f.textureReference+256,(byte)0);
@@ -393,8 +403,8 @@ final class FontTextureRepair {
             put32(info,56,image.length);put32(info,60,0);put32(info,64,image.length);
             put16(info,68,f.width);put16(info,70,f.height);
             info[72]=(byte)Integer.numberOfTrailingZeros(f.width);info[73]=(byte)Integer.numberOfTrailingZeros(f.height);
-            info[74]=0x24;info[75]=0;put16(info,76,0);info[78]=1;
-            put32(info,144,0x33545844);
+            info[74]=0x20;info[75]=0;put16(info,76,0);info[78]=1;
+            put32(info,144,21);
             byHash.put(hash,new Texture(hash,image,info));
         }
         for(int i=0;i<english.length;i++)if(english[i]!=originalEnglish[i]&&!allowed.get(i))
