@@ -1,0 +1,30 @@
+name: Publish Russian fonts v3 owner test
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-fonts-v3.yml']
+permissions:
+  actions: read
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for APK build only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run watch 40284060190 --interval 10 --exit-status
+          gh run download 40284060190 --name NFSU2-ARM64-Cyrillic-native-fix --dir build/input
+      - name: Prepare release files
+        run: |
+          mkdir -p build/release
+          find build/input -name app-debug.apk -exec cp {} build/release/NFSU2-ARM64-Russian-Fonts-v3.apk \;
+          sha256sum build/release/NFSU2-ARM64-Russian-Fonts-v3.apk > build/release/SHA256SUMS.txt
+      - name: Publish APK for owner device testing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create arm64-fonts-v3-40284060190 build/release/* --prerelease --target "$GITHUB_SHA" --title "ARM64 Russian fonts v3 — uncompressed TPK" --notes-file docs/FONTS_V3_OWNER_TEST.md
