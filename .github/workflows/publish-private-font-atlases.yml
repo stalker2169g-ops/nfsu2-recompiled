@@ -1,0 +1,58 @@
+name: Publish private Russian font atlases
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-private-font-atlases.yml']
+permissions:
+  actions: read
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require matching successful builds and Android checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for run in 40283339852 40283339932; do
+            test "$(gh api repos/$GITHUB_REPOSITORY/actions/runs/$run --jq .head_sha)" = 0ba7d752f2fdfd3a02e867a1e096e109a6b83a0d
+            gh run watch "$run" --interval 10 --exit-status
+          done
+          gh run download 40283339852 --name NFSU2-ARM64-Cyrillic-native-fix --dir build/apk
+          gh run download 40283339932 --name Android-font-repair-tests --dir build/checks
+      - name: Verify APK and test evidence
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,zipfile,shutil
+          import xml.etree.ElementTree as ET
+          def one(name):
+              found=list(Path('build/apk').rglob(name))
+              assert len(found)==1,(name,found)
+              return found[0]
+          suites=[ET.parse(p).getroot() for p in Path('build/checks').rglob('TEST-*.xml')]
+          assert suites and sum(int(s.get('tests','0')) for s in suites)>=8
+          assert all(int(s.get('failures','0'))==0 and int(s.get('errors','0'))==0 for s in suites)
+          apk=one('app-debug.apk');sha=hashlib.sha256(apk.read_bytes()).hexdigest()
+          assert sha==one('APK-SHA256.txt').read_text().split()[0]
+          report=json.loads(one('patch-report.json').read_text())
+          with zipfile.ZipFile(apk) as z:
+              assert hashlib.sha256(z.read('lib/arm64-v8a/libnfsu2_android.so')).hexdigest()==report['output_sha256']
+          assert 'ARM64_CODEC_VERIFIED_SHA256='+report['output_sha256'] in one('verification.log').read_text()
+          assert 'FONT_TRACE_HOOK_PRESERVED_GAME_QUAD' in one('font-trace-verification.log').read_text()
+          out=Path('build/release');out.mkdir(parents=True,exist_ok=True)
+          name='NFSU2-ARM64-Russian-Fonts-v2.apk'
+          shutil.copyfile(apk,out/name)
+          for f in ('patch-report.json','verification.log','font-trace-verification.log'):
+              shutil.copyfile(one(f),out/f)
+          shutil.copyfile('docs/PRIVATE_FONT_ATLASES_V2.md',out/'PRIVATE_FONT_ATLASES_V2.md')
+          (out/'SHA256SUMS.txt').write_text(sha+'  '+name+'\n')
+          print('PRIVATE_FONT_APK_SHA256='+sha)
+          PY
+      - name: Publish test APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create arm64-private-fonts-40283339852 build/release/* --prerelease --target "$GITHUB_SHA" --title "ARM64 Russian fonts v2 — private texture names" --notes-file docs/PRIVATE_FONT_ATLASES_V2.md
